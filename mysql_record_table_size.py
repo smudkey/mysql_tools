@@ -48,15 +48,15 @@ def log_table_sizes(port):
     zk = host_utils.MysqlZookeeper()
 
     replica_set = zk.get_replica_set_from_instance(instance)
-    master = zk.get_mysql_instance_from_replica_set(replica_set,
+    main = zk.get_mysql_instance_from_replica_set(replica_set,
                                                     host_utils.REPLICA_ROLE_MASTER)
-    if not mysql_lib.does_table_exist(master,
+    if not mysql_lib.does_table_exist(main,
                                       mysql_lib.METADATA_DB,
                                       TABLE_SIZE_TBL):
-        create_table_size_table(master)
+        create_table_size_table(main)
 
     sizes = get_all_table_sizes(instance)
-    conn = mysql_lib.connect_mysql(master, 'dbascript')
+    conn = mysql_lib.connect_mysql(main, 'dbascript')
     for db in sizes:
         for table in sizes[db]:
             for partition in sizes[db][table]:
@@ -119,7 +119,7 @@ def create_table_size_table(instance):
     """ Create the table_size_historic table
 
     Args:
-    a hostAddr object for the master of the replica set
+    a hostAddr object for the main of the replica set
     """
     conn = mysql_lib.connect_mysql(instance, 'dbascript')
     cursor = conn.cursor()

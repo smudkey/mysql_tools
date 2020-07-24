@@ -31,7 +31,7 @@ def rotate_binlogs_if_needed(port, dry_run):
                                              str(port))))
     log_bin_dir = host_utils.get_cnf_setting('log_bin', port)
     binlog = os.path.join(os.path.dirname(log_bin_dir),
-                          mysql_lib.get_master_status(instance)['File'])
+                          mysql_lib.get_main_status(instance)['File'])
     # We don't update access time, so this is creation time.
     creation = datetime.datetime.fromtimestamp(os.stat(binlog).st_atime)
     age = (datetime.datetime.utcnow() - creation).seconds
@@ -41,7 +41,7 @@ def rotate_binlogs_if_needed(port, dry_run):
                                                MAX_AGE=MAX_AGE))
         if not dry_run:
             log.info('Flushing bin log')
-            mysql_lib.flush_master_log(instance)
+            mysql_lib.flush_main_log(instance)
     else:
         log.info('Age of current binlog is {age} which is less than '
                  'MAX_AGE ({MAX_AGE})'.format(age=age,

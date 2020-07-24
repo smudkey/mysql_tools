@@ -33,7 +33,7 @@ def add_fence_to_host(hostname, dry_run, force=False):
         Args:
           hostname: A hostaddr object for the instance
           dry_run: Really do it or not?
-          force: Force it, even if a master in ZK
+          force: Force it, even if a main in ZK
     """
     zk = host_utils.MysqlZookeeper()
     try:
@@ -42,11 +42,11 @@ def add_fence_to_host(hostname, dry_run, force=False):
         log.info("{} is not in zk ".format(hostname))
         replica_type = None
 
-    # We generally don't allow fencing a master, but there could be
+    # We generally don't allow fencing a main, but there could be
     # cases where a failover has occurred and ZK is having issues,
     # so we do permit forcing it.
     if replica_type == host_utils.REPLICA_ROLE_MASTER and not force:
-        raise Exception('Can not fence an instance which is a Master in zk')
+        raise Exception('Can not fence an instance which is a Main in zk')
 
     conn = boto.ec2.connect_to_region(environment_specific.EC2_REGION)
     instance_id = environment_specific.get_server_metadata(

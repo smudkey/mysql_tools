@@ -543,13 +543,13 @@ def csv_backups_running(instance):
     zk = host_utils.MysqlZookeeper()
     replica_set = zk.get_replica_set_from_instance(instance)
 
-    for slave_role in [host_utils.REPLICA_ROLE_DR_SLAVE, host_utils.REPLICA_ROLE_SLAVE]:
-        slave_instance = zk.get_mysql_instance_from_replica_set(replica_set,
-                            slave_role)
-        if not slave_instance:
+    for subordinate_role in [host_utils.REPLICA_ROLE_DR_SLAVE, host_utils.REPLICA_ROLE_SLAVE]:
+        subordinate_instance = zk.get_mysql_instance_from_replica_set(replica_set,
+                            subordinate_role)
+        if not subordinate_instance:
             continue
 
-        if dump_user in mysql_lib.get_connected_users(slave_instance):
+        if dump_user in mysql_lib.get_connected_users(subordinate_instance):
             return True
 
     return False
@@ -565,11 +565,11 @@ def log_csv_backup_success(instance, date, dev_bucket=False):
     """
     zk = host_utils.MysqlZookeeper()
     replica_set = zk.get_replica_set_from_instance(instance)
-    master = zk.get_mysql_instance_from_replica_set(replica_set)
-    conn = mysql_lib.connect_mysql(master, 'dbascript')
+    main = zk.get_mysql_instance_from_replica_set(replica_set)
+    conn = mysql_lib.connect_mysql(main, 'dbascript')
     cursor = conn.cursor()
 
-    if not mysql_lib.does_table_exist(master, mysql_lib.METADATA_DB,
+    if not mysql_lib.does_table_exist(main, mysql_lib.METADATA_DB,
                                       environment_specific.CSV_BACKUP_LOG_TABLE):
             print 'Creating missing metadata table'
             cursor.execute(CSV_BACKUP_LOG_TABLE_DEFINITION.format(
@@ -598,11 +598,11 @@ def csv_backup_success_logged(instance, date, dev_bucket=False):
     """
     zk = host_utils.MysqlZookeeper()
     replica_set = zk.get_replica_set_from_instance(instance)
-    master = zk.get_mysql_instance_from_replica_set(replica_set)
-    conn = mysql_lib.connect_mysql(master, 'dbascript')
+    main = zk.get_mysql_instance_from_replica_set(replica_set)
+    conn = mysql_lib.connect_mysql(main, 'dbascript')
     cursor = conn.cursor()
 
-    if not mysql_lib.does_table_exist(master, mysql_lib.METADATA_DB,
+    if not mysql_lib.does_table_exist(main, mysql_lib.METADATA_DB,
                                       environment_specific.CSV_BACKUP_LOG_TABLE):
         return False
 

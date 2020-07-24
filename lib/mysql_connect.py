@@ -5,9 +5,9 @@ import json
 AUTH_FILE = '/var/config/config.services.mysql_auth'
 MYSQL_DS_ZK = '/var/config/config.services.dataservices.mysql_databases'
 MYSQL_GEN_ZK = '/var/config/config.services.general_mysql_databases_config'
-MASTER = 'master'
-SLAVE = 'slave'
-DR_SLAVE = 'dr_slave'
+MASTER = 'main'
+SLAVE = 'subordinate'
+DR_SLAVE = 'dr_subordinate'
 REPLICA_ROLES = [MASTER, SLAVE, DR_SLAVE]
 
 
@@ -25,7 +25,7 @@ def main():
                         default=False,
                         action='store_true')
     parser.add_argument('--replica_set_role',
-                        help='Pull the hostname/password for a server other than the master',
+                        help='Pull the hostname/password for a server other than the main',
                         default=None,
                         choices=REPLICA_ROLES)
     args = parser.parse_args()
@@ -49,11 +49,11 @@ def get_mysql_connection(replica_set_name, writeable=False,
     writeable - If the connection should be writeable.
     user_role - A named user role to pull. If this is supplied, writeable
                 is not respected.
-    replica_set_role - Default role is master, can also be slave or dr_slave.
+    replica_set_role - Default role is main, can also be subordinate or dr_subordinate.
                        If this is supplied, writeable is not respected.
 
     Returns:
-    hostname - (str) The master host of the named replica set
+    hostname - (str) The main host of the named replica set
     port - The port of the named replica set. Please do not assume 3306.
     username - The MySQL username to be used.
     password - The password that corrosponds to the username

@@ -17,15 +17,15 @@ from lib import environment_specific
 # 10k bytes of lag is just a few seconds normally
 NORMAL_IO_LAG = 10485760
 # Max lag in seconds. If more than NORMAL_HEARTBEAT_LAG refuse to modify zk, or
-# attempt a live master failover
+# attempt a live main failover
 NORMAL_HEARTBEAT_LAG = 120
 HEARTBEAT_SAFETY_MARGIN = 10
-# Max lag in second for a dead master failover
+# Max lag in second for a dead main failover
 LOOSE_HEARTBEAT_LAG = 3600
 
 CHECK_SQL_THREAD = 'sql'
 CHECK_IO_THREAD = 'io'
-CHECK_CORRECT_MASTER = 'master'
+CHECK_CORRECT_MASTER = 'main'
 ALL_REPLICATION_CHECKS = set([CHECK_SQL_THREAD,
                               CHECK_IO_THREAD,
                               CHECK_CORRECT_MASTER])
@@ -186,26 +186,26 @@ def connect_mysql(instance, role='admin'):
     return db
 
 
-def get_master_from_instance(instance):
-    """ Determine if an instance thinks it is a slave and if so from where
+def get_main_from_instance(instance):
+    """ Determine if an instance thinks it is a subordinate and if so from where
 
     Args:
     instance - A hostaddr object
 
     Returns:
-    master - A hostaddr object or None
+    main - A hostaddr object or None
     """
     try:
-        ss = get_slave_status(instance)
+        ss = get_subordinate_status(instance)
     except ReplicationError:
         return None
 
-    return host_utils.HostAddr(''.join((ss['Master_Host'],
+    return host_utils.HostAddr(''.join((ss['Main_Host'],
                                         ':',
-                                        str(ss['Master_Port']))))
+                                        str(ss['Main_Port']))))
 
 
-def get_slave_status(instance):
+def get_subordinate_status(instance):
     """ Get MySQL replication status
 
     Args:
@@ -216,30 +216,30 @@ def get_slave_status(instance):
 
     Example:
     {'Connect_Retry': 60L,
-     'Exec_Master_Log_Pos': 98926487L,
+     'Exec_Main_Log_Pos': 98926487L,
      'Last_Errno': 0L,
      'Last_Error': '',
      'Last_IO_Errno': 0L,
      'Last_IO_Error': '',
      'Last_SQL_Errno': 0L,
      'Last_SQL_Error': '',
-     'Master_Host': 'sharddb015e',
-     'Master_Log_File': 'mysql-bin.000290',
-     'Master_Port': 3306L,
-     'Master_SSL_Allowed': 'No',
-     'Master_SSL_CA_File': '',
-     'Master_SSL_CA_Path': '',
-     'Master_SSL_Cert': '',
-     'Master_SSL_Cipher': '',
-     'Master_SSL_Key': '',
-     'Master_SSL_Verify_Server_Cert': 'No',
-     'Master_Server_Id': 946544731L,
-     'Master_User': 'replicant',
-     'Read_Master_Log_Pos': 98926487L,
+     'Main_Host': 'sharddb015e',
+     'Main_Log_File': 'mysql-bin.000290',
+     'Main_Port': 3306L,
+     'Main_SSL_Allowed': 'No',
+     'Main_SSL_CA_File': '',
+     'Main_SSL_CA_Path': '',
+     'Main_SSL_Cert': '',
+     'Main_SSL_Cipher': '',
+     'Main_SSL_Key': '',
+     'Main_SSL_Verify_Server_Cert': 'No',
+     'Main_Server_Id': 946544731L,
+     'Main_User': 'replicant',
+     'Read_Main_Log_Pos': 98926487L,
      'Relay_Log_File': 'mysqld_3306-relay-bin.000237',
      'Relay_Log_Pos': 98926633L,
      'Relay_Log_Space': 98926838L,
-     'Relay_Master_Log_File': 'mysql-bin.000290',
+     'Relay_Main_Log_File': 'mysql-bin.000290',
      'Replicate_Do_DB': '',
      'Replicate_Do_Table': '',
      'Replicate_Ignore_DB': '',
@@ -247,11 +247,11 @@ def get_slave_status(instance):
      'Replicate_Ignore_Table': '',
      'Replicate_Wild_Do_Table': '',
      'Replicate_Wild_Ignore_Table': '',
-     'Seconds_Behind_Master': 0L,
+     'Seconds_Behind_Main': 0L,
      'Skip_Counter': 0L,
-     'Slave_IO_Running': 'Yes',
-     'Slave_IO_State': 'Waiting for master to send event',
-     'Slave_SQL_Running': 'Yes',
+     'Subordinate_IO_Running': 'Yes',
+     'Subordinate_IO_State': 'Waiting for main to send event',
+     'Subordinate_SQL_Running': 'Yes',
      'Until_Condition': 'None',
      'Until_Log_File': '',
      'Until_Log_Pos': 0L}
@@ -260,13 +260,13 @@ def get_slave_status(instance):
     cursor = conn.cursor()
 
     cursor.execute("SHOW SLAVE STATUS")
-    slave_status = cursor.fetchone()
-    if slave_status is None:
-        raise ReplicationError('Instance {} is not a slave'.format(instance))
-    return slave_status
+    subordinate_status = cursor.fetchone()
+    if subordinate_status is None:
+        raise ReplicationError('Instance {} is not a subordinate'.format(instance))
+    return subordinate_status
 
 
-def flush_master_log(instance):
+def flush_main_log(instance):
     """ Flush binary logs
 
     Args:
@@ -277,14 +277,14 @@ def flush_master_log(instance):
     cursor.execute("FLUSH BINARY LOGS")
 
 
-def get_master_status(instance):
-    """ Get poisition of most recent write to master replication logs
+def get_main_status(instance):
+    """ Get poisition of most recent write to main replication logs
 
     Args:
     instance - a hostAddr object
 
     Returns:
-    a dict describing the master status
+    a dict describing the main status
 
     Example:
     {'Binlog_Do_DB': '',
@@ -298,14 +298,14 @@ def get_master_status(instance):
     cursor = conn.cursor()
 
     cursor.execute("SHOW MASTER STATUS")
-    master_status = cursor.fetchone()
-    if master_status is None:
+    main_status = cursor.fetchone()
+    if main_status is None:
         raise ReplicationError('Server is not setup to write replication logs')
-    return master_status
+    return main_status
 
 
 def get_gtid_subtract(instance, src_gtid_set, ref_gtid_set):
-    """ Get poisition of most recent write to master replication logs
+    """ Get poisition of most recent write to main replication logs
 
     Args:
     instance - a hostAddr object
@@ -324,7 +324,7 @@ def get_gtid_subtract(instance, src_gtid_set, ref_gtid_set):
     return gtid_subtract['errant_trx']
 
 
-def get_master_logs(instance):
+def get_main_logs(instance):
     """ Get MySQL binary log names and size
 
     Args
@@ -350,8 +350,8 @@ def get_master_logs(instance):
     cursor = conn.cursor()
 
     cursor.execute("SHOW MASTER LOGS")
-    master_status = cursor.fetchall()
-    return master_status
+    main_status = cursor.fetchall()
+    return main_status
 
 
 def get_binlog_archiving_lag(instance):
@@ -382,13 +382,13 @@ def get_binlog_archiving_lag(instance):
         return None
 
 
-def calc_binlog_behind(log_file_num, log_file_pos, master_logs):
+def calc_binlog_behind(log_file_num, log_file_pos, main_logs):
     """ Calculate replication lag in bytes
 
     Args:
     log_file_num - The integer of the binlog
     log_file_pos - The position inside of log_file_num
-    master_logs - A tuple of dicts describing the replication status
+    main_logs - A tuple of dicts describing the replication status
 
     Returns:
     bytes_behind - bytes of lag across all log file
@@ -396,7 +396,7 @@ def calc_binlog_behind(log_file_num, log_file_pos, master_logs):
     """
     binlogs_behind = 0
     bytes_behind = 0
-    for binlog in master_logs:
+    for binlog in main_logs:
         _, binlog_num = re.split('\.', binlog['Log_name'])
         if int(binlog_num) >= int(log_file_num):
             if binlog_num == log_file_num:
@@ -643,7 +643,7 @@ def setup_semisync_plugins(instance):
         return
 
     try:
-        cursor.execute("INSTALL PLUGIN rpl_semi_sync_master SONAME 'semisync_master.so'")
+        cursor.execute("INSTALL PLUGIN rpl_semi_sync_main SONAME 'semisync_main.so'")
     except MySQLdb.OperationalError as detail:
         (error_code, msg) = detail.args
         if error_code != MYSQL_ERROR_FUNCTION_EXISTS:
@@ -651,7 +651,7 @@ def setup_semisync_plugins(instance):
         # already loaded, no work to do
 
     try:
-        cursor.execute("INSTALL PLUGIN rpl_semi_sync_slave SONAME 'semisync_slave.so'")
+        cursor.execute("INSTALL PLUGIN rpl_semi_sync_subordinate SONAME 'semisync_subordinate.so'")
     except MySQLdb.OperationalError as detail:
         (error_code, msg) = detail.args
         if error_code != MYSQL_ERROR_FUNCTION_EXISTS:
@@ -984,22 +984,22 @@ def stop_event_scheduler(instance):
         warnings.resetwarnings()
 
 
-def setup_replication(new_master, new_replica, auto_pos=True):
-    """ Set an instance as a slave of another
+def setup_replication(new_main, new_replica, auto_pos=True):
+    """ Set an instance as a subordinate of another
 
     Args:
-    new_master - A hostaddr object for the new master
-    new_slave - A hostaddr object for the new slave
+    new_main - A hostaddr object for the new main
+    new_subordinate - A hostaddr object for the new subordinate
     auto_pos - Do we want GTID auto positioning (if GTID is enabled)?
     """
-    log.info('Setting {new_replica} as a replica of new master '
-             '{new_master}'.format(new_master=new_master,
+    log.info('Setting {new_replica} as a replica of new main '
+             '{new_main}'.format(new_main=new_main,
                                    new_replica=new_replica))
 
-    new_master_coordinates = get_master_status(new_master)
-    change_master(new_replica, new_master,
-                  new_master_coordinates['File'],
-                  new_master_coordinates['Position'],
+    new_main_coordinates = get_main_status(new_main)
+    change_main(new_replica, new_main,
+                  new_main_coordinates['File'],
+                  new_main_coordinates['Position'],
                   gtid_auto_pos=auto_pos)
 
 
@@ -1027,13 +1027,13 @@ def stop_replication(instance, thread_type=REPLICATION_THREAD_ALL):
     conn = connect_mysql(instance)
     cursor = conn.cursor()
 
-    ss = get_slave_status(instance)
-    if (ss['Slave_IO_Running'] != 'No' and ss['Slave_SQL_Running'] != 'No' and
+    ss = get_subordinate_status(instance)
+    if (ss['Subordinate_IO_Running'] != 'No' and ss['Subordinate_SQL_Running'] != 'No' and
             thread_type == REPLICATION_THREAD_ALL):
         cmd = 'STOP SLAVE'
-    elif ss['Slave_IO_Running'] != 'No' and thread_type != REPLICATION_THREAD_SQL:
+    elif ss['Subordinate_IO_Running'] != 'No' and thread_type != REPLICATION_THREAD_SQL:
         cmd = 'STOP SLAVE IO_THREAD'
-    elif ss['Slave_SQL_Running'] != 'No' and thread_type != REPLICATION_THREAD_IO:
+    elif ss['Subordinate_SQL_Running'] != 'No' and thread_type != REPLICATION_THREAD_IO:
         cmd = 'STOP SLAVE SQL_THREAD'
     else:
         log.info('Replication already stopped')
@@ -1059,13 +1059,13 @@ def start_replication(instance, thread_type=REPLICATION_THREAD_ALL):
     conn = connect_mysql(instance)
     cursor = conn.cursor()
 
-    ss = get_slave_status(instance)
-    if (ss['Slave_IO_Running'] != 'Yes' and ss['Slave_SQL_Running'] != 'Yes' and
+    ss = get_subordinate_status(instance)
+    if (ss['Subordinate_IO_Running'] != 'Yes' and ss['Subordinate_SQL_Running'] != 'Yes' and
             thread_type == REPLICATION_THREAD_ALL):
         cmd = 'START SLAVE'
-    elif ss['Slave_IO_Running'] != 'Yes' and thread_type != REPLICATION_THREAD_SQL:
+    elif ss['Subordinate_IO_Running'] != 'Yes' and thread_type != REPLICATION_THREAD_SQL:
         cmd = 'START SLAVE IO_THREAD'
-    elif ss['Slave_SQL_Running'] != 'Yes' and thread_type != REPLICATION_THREAD_IO:
+    elif ss['Subordinate_SQL_Running'] != 'Yes' and thread_type != REPLICATION_THREAD_IO:
         cmd = 'START SLAVE SQL_THREAD'
     else:
         log.info('Replication already running')
@@ -1078,7 +1078,7 @@ def start_replication(instance, thread_type=REPLICATION_THREAD_ALL):
     time.sleep(1)
 
 
-def reset_slave(instance):
+def reset_subordinate(instance):
     """ Stop replicaion and remove all repl settings
 
     Args:
@@ -1097,9 +1097,9 @@ def reset_slave(instance):
         pass
 
 
-def reset_master(instance):
+def reset_main(instance):
     """ Clear the binlogs and any GTID information that may exist.
-        We may have to do this when setting up a new slave.
+        We may have to do this when setting up a new subordinate.
 
     Args:
     instance - A hostAddr object
@@ -1112,16 +1112,16 @@ def reset_master(instance):
     conn.close()
 
 
-def change_master(slave_hostaddr, master_hostaddr, master_log_file,
-                  master_log_pos, no_start=False, skip_set_readonly=False,
+def change_main(subordinate_hostaddr, main_hostaddr, main_log_file,
+                  main_log_pos, no_start=False, skip_set_readonly=False,
                   gtid_purged=None, gtid_auto_pos=True):
     """ Setup MySQL replication on new replica
 
     Args:
-    slave_hostaddr -  hostaddr object for the new replica
-    hostaddr - A hostaddr object for the master db
-    master_log_file - Replication log file to begin streaming
-    master_log_pos - Position in master_log_file
+    subordinate_hostaddr -  hostaddr object for the new replica
+    hostaddr - A hostaddr object for the main db
+    main_log_file - Replication log file to begin streaming
+    main_log_pos - Position in main_log_file
     no_start - If set, don't run START SLAVE after CHANGE MASTER
     skip_set_readonly - If set, don't set read-only flag
     gtid_purged - A set of GTIDs that we have already applied,
@@ -1129,37 +1129,37 @@ def change_master(slave_hostaddr, master_hostaddr, master_log_file,
     gtid_auto_pos - If set, use GTID auto-positioning if we're also
                     in GTID mode.
     """
-    conn = connect_mysql(slave_hostaddr)
+    conn = connect_mysql(subordinate_hostaddr)
     cursor = conn.cursor()
 
     if not skip_set_readonly:
-        set_global_variable(slave_hostaddr, 'read_only', True)
+        set_global_variable(subordinate_hostaddr, 'read_only', True)
 
-    reset_slave(slave_hostaddr)
-    master_user, master_password = get_mysql_user_for_role('replication')
+    reset_subordinate(subordinate_hostaddr)
+    main_user, main_password = get_mysql_user_for_role('replication')
 
-    parameters = {'master_user': master_user,
-                  'master_password': master_password,
-                  'master_host': master_hostaddr.hostname,
-                  'master_port': master_hostaddr.port,
-                  'master_log_file': master_log_file,
-                  'master_log_pos': master_log_pos}
+    parameters = {'main_user': main_user,
+                  'main_password': main_password,
+                  'main_host': main_hostaddr.hostname,
+                  'main_port': main_hostaddr.port,
+                  'main_log_file': main_log_file,
+                  'main_log_pos': main_log_pos}
 
     sql_base = ("CHANGE MASTER TO "
-                "MASTER_USER=%(master_user)s, "
-                "MASTER_PASSWORD=%(master_password)s, "
-                "MASTER_PORT=%(master_port)s, "
-                "MASTER_HOST=%(master_host)s, "
+                "MASTER_USER=%(main_user)s, "
+                "MASTER_PASSWORD=%(main_password)s, "
+                "MASTER_PORT=%(main_port)s, "
+                "MASTER_HOST=%(main_host)s, "
                 "{extra}")
 
-    # are we in a GTID-based cluster - i.e., both master and slave
+    # are we in a GTID-based cluster - i.e., both main and subordinate
     # have GTID enabled?  If so, we need a slightly different SQL
     # statement.
-    master_globals = get_global_variables(master_hostaddr)
-    slave_globals = get_global_variables(slave_hostaddr)
-    if master_globals['version'] >= '5.6' and slave_globals['version'] >= '5.6':
-        use_gtid = master_globals['gtid_mode'] == 'ON' and \
-                   slave_globals['gtid_mode'] == 'ON'
+    main_globals = get_global_variables(main_hostaddr)
+    subordinate_globals = get_global_variables(subordinate_hostaddr)
+    if main_globals['version'] >= '5.6' and subordinate_globals['version'] >= '5.6':
+        use_gtid = main_globals['gtid_mode'] == 'ON' and \
+                   subordinate_globals['gtid_mode'] == 'ON'
     else:
         # GTID not supported at all.
         use_gtid = None
@@ -1167,19 +1167,19 @@ def change_master(slave_hostaddr, master_hostaddr, master_log_file,
     # if GTID is enabled but gtid_auto_pos is not set, we don't use
     # auto-positioning.  This will only happen in the case of a
     # shard migration / partial failover, which means that we're
-    # taking a master and temporarily making it a slave.
+    # taking a main and temporarily making it a subordinate.
     if use_gtid and gtid_auto_pos:
         sql = sql_base.format(extra='MASTER_AUTO_POSITION=1')
-        del parameters['master_log_file']
-        del parameters['master_log_pos']
+        del parameters['main_log_file']
+        del parameters['main_log_pos']
 
         if gtid_purged:
             cursor.execute("SET GLOBAL gtid_purged=%(gtid_purged)s",
                            {'gtid_purged': gtid_purged})
             log.info(cursor._executed)
     else:
-        extra = ("MASTER_LOG_FILE=%(master_log_file)s, "
-                 "MASTER_LOG_POS=%(master_log_pos)s")
+        extra = ("MASTER_LOG_FILE=%(main_log_file)s, "
+                 "MASTER_LOG_POS=%(main_log_pos)s")
         if use_gtid is not None:
             extra = extra + ", MASTER_AUTO_POSITION=0"
         sql = sql_base.format(extra=extra)
@@ -1190,54 +1190,54 @@ def change_master(slave_hostaddr, master_hostaddr, master_log_file,
     log.info(cursor._executed)
 
     if not no_start:
-        start_replication(slave_hostaddr)
+        start_replication(subordinate_hostaddr)
         # Replication reporting is wonky for the first second
         time.sleep(1)
         # Avoid race conditions for zk update monitor
         # if we are all in Gtid's mode then we check both IO and SQL threads
         # after START SLAVE
         if gtid_auto_pos:
-            assert_replication_sanity(slave_hostaddr,
+            assert_replication_sanity(subordinate_hostaddr,
                                   set([CHECK_SQL_THREAD, CHECK_IO_THREAD]))
         else:
-            # But with gtid_migration set on where OLD master host not in
+            # But with gtid_migration set on where OLD main host not in
             # gtid mode yet we just don't check IO thread yet
             # Expecting IO thread will brake after failover before msyql get
             # restarted
-            assert_replication_sanity(slave_hostaddr, set([CHECK_SQL_THREAD]))
+            assert_replication_sanity(subordinate_hostaddr, set([CHECK_SQL_THREAD]))
 
 def find_errant_trx(source, reference):
-    """ If this is a GTID cluster, determine if this slave has any errant
+    """ If this is a GTID cluster, determine if this subordinate has any errant
         transactions.  If it does, we can't promote it until we fix them.
 
         Args:
             source: the source instance to check
-            reference: the instance to compare to.  it may be a master,
-                       or it may be another slave in the same cluster.
+            reference: the instance to compare to.  it may be a main,
+                       or it may be another subordinate in the same cluster.
         Returns:
             A string of errant trx, or None if there aren't any.
     """
-    ss = get_master_status(source).get('Executed_Gtid_Set').replace('\n', '')
-    rs = get_master_status(reference).get('Executed_Gtid_Set').replace('\n', '')
+    ss = get_main_status(source).get('Executed_Gtid_Set').replace('\n', '')
+    rs = get_main_status(reference).get('Executed_Gtid_Set').replace('\n', '')
     errant_trx = get_gtid_subtract(source, ss, rs)
     return errant_trx
 
 
-def fix_errant_trx(gtids, target_instance, is_master=True):
+def fix_errant_trx(gtids, target_instance, is_main=True):
     """ We have a set of GTIDs that don't belong.  Try to fix them.
         Args:
             gtids: A String of GTIDs eg:
             'bba7d5dd-fdfe-11e6-8b1e-12005f9b2b06:877821-877864, etc'
             target_instance: The hostaddr of the instance to use
-            is_master: Is this a master?
+            is_main: Is this a main?
         Returns:
             Nothing - either it works or it fails.
     """
     conn = connect_mysql(target_instance)
     cursor = conn.cursor()
 
-    # not a master, we don't need to write these to the binlog.
-    if not is_master:
+    # not a main, we don't need to write these to the binlog.
+    if not is_main:
         cursor.execute('SET SESSION sql_log_bin=0')
 
     sql = 'SET GTID_NEXT=%(gtid)s'
@@ -1260,41 +1260,41 @@ def fix_errant_trx(gtids, target_instance, is_master=True):
                 conn.commit()
                 cursor.execute('SET GTID_NEXT=AUTOMATIC')
 
-    if not is_master:
+    if not is_main:
         cursor.execute('SET SESSION sql_log_bin=1')
     conn.close()
 
 
-def wait_for_catch_up(slave_hostaddr, io=False, migration=False):
+def wait_for_catch_up(subordinate_hostaddr, io=False, migration=False):
     """ Watch replication or just the IO thread until it is caught up.
     The default is to watch replication overall.
 
     Args:
-    slave_hostaddr - A HostAddr object
+    subordinate_hostaddr - A HostAddr object
     io - if set, watch the IO thread only
     migration - if set, we're running a migration, so skip some of
-                the expected-master sanity checks.
+                the expected-main sanity checks.
     """
     remaining_time = 'Not yet available'
     sleep_duration = 5
     last = None
     # Confirm that replication is even setup at all
-    get_slave_status(slave_hostaddr)
+    get_subordinate_status(subordinate_hostaddr)
 
     try:
-        assert_replication_sanity(slave_hostaddr, migration=migration)
+        assert_replication_sanity(subordinate_hostaddr, migration=migration)
     except:
         log.warning('Replication does not appear sane, going to sleep 60 '
                     'seconds in case things get better on their own.')
         time.sleep(60)
-        assert_replication_sanity(slave_hostaddr, migration=migration)
+        assert_replication_sanity(subordinate_hostaddr, migration=migration)
 
     invalid_lag = ('{} is unavailable, going to sleep for a minute and '
                    'retry. A likely reason is that there was a failover '
                    'between when a backup was taken and when a restore was '
                    'run so there will not be a entry until replication has '
                    'caught up more. If this is a new replica set, read_only '
-                   'is probably ON on the master server.')
+                   'is probably ON on the main server.')
     acceptable_lag = ('{lag_type}: {current_lag} < {normal_lag}, '
                       'which is good enough.')
     eta_catchup_time = ('{lag_type}: {current_lag}.  Waiting for < '
@@ -1305,10 +1305,10 @@ def wait_for_catch_up(slave_hostaddr, io=False, migration=False):
         lag_type = 'IO thread lag (bytes)'
     else:
         normal_lag = NORMAL_HEARTBEAT_LAG - HEARTBEAT_SAFETY_MARGIN
-        lag_type = 'Computed seconds behind master'
+        lag_type = 'Computed seconds behind main'
 
     while True:
-        replication = calc_slave_lag(slave_hostaddr)
+        replication = calc_subordinate_lag(subordinate_hostaddr)
         lag = replication['io_bytes'] if io else replication['sbm']
 
         if lag is None or lag == INVALID:
@@ -1350,7 +1350,7 @@ def wait_for_catch_up(slave_hostaddr, io=False, migration=False):
         time.sleep(sleep_duration)
 
 
-def assert_replication_unlagged(instance, lag_tolerance, dead_master=False):
+def assert_replication_unlagged(instance, lag_tolerance, dead_main=False):
     """ Confirm that replication lag is less than tolerance, otherwise
         throw an exception
 
@@ -1361,8 +1361,8 @@ def assert_replication_unlagged(instance, lag_tolerance, dead_master=False):
                     'REPLICATION_TOLERANCE_NORMAL' - replica can be slightly lagged
                     'REPLICATION_TOLERANCE_LOOSE' - replica can be really lagged
     """
-    # Test to see if the slave is setup for replication. If not, we are hosed
-    replication = calc_slave_lag(instance, dead_master)
+    # Test to see if the subordinate is setup for replication. If not, we are hosed
+    replication = calc_subordinate_lag(instance, dead_main)
     problems = set()
     if lag_tolerance == REPLICATION_TOLERANCE_NONE:
         if replication['sql_bytes'] != 0:
@@ -1407,14 +1407,14 @@ def assert_replication_sanity(instance,
     checks - A set of checks to run.
     """
     problems = set()
-    slave_status = get_slave_status(instance)
+    subordinate_status = get_subordinate_status(instance)
     if (CHECK_IO_THREAD in checks and
-            slave_status['Slave_IO_Running'] != 'Yes'):
+            subordinate_status['Subordinate_IO_Running'] != 'Yes'):
         problems.add('Replica {r} has IO thread not running'
                      ''.format(r=instance))
 
     if (CHECK_SQL_THREAD in checks and
-            slave_status['Slave_SQL_Running'] != 'Yes'):
+            subordinate_status['Subordinate_SQL_Running'] != 'Yes'):
         problems.add('Replica {r} has SQL thread not running'
                      ''.format(r=instance))
 
@@ -1425,23 +1425,23 @@ def assert_replication_sanity(instance,
         except:
             # must not be in zk, returning
             return
-        expected_master = zk.get_mysql_instance_from_replica_set(replica_set)
-        actual_master = host_utils.HostAddr(':'.join((slave_status['Master_Host'],
-                                                      str(slave_status['Master_Port']))))
-        if expected_master != actual_master:
-            problems.add('Master is {actual} rather than expected {expected} '
-                         'for replica {r}'.format(actual=actual_master,
-                                                  expected=expected_master,
+        expected_main = zk.get_mysql_instance_from_replica_set(replica_set)
+        actual_main = host_utils.HostAddr(':'.join((subordinate_status['Main_Host'],
+                                                      str(subordinate_status['Main_Port']))))
+        if expected_main != actual_main:
+            problems.add('Main is {actual} rather than expected {expected} '
+                         'for replica {r}'.format(actual=actual_main,
+                                                  expected=expected_main,
                                                   r=instance))
     if problems:
         raise Exception(', '.join(problems))
 
 
-def calc_slave_lag(slave_hostaddr, dead_master=False):
+def calc_subordinate_lag(subordinate_hostaddr, dead_main=False):
     """ Determine MySQL replication lag in bytes and binlogs
 
     Args:
-    slave_hostaddr - A HostAddr object for a replica
+    subordinate_hostaddr - A HostAddr object for a replica
 
     Returns:
     io_binlogs - Number of undownloaded binlogs. This is only slightly useful
@@ -1454,7 +1454,7 @@ def calc_slave_lag(slave_hostaddr, dead_master=False):
                   as sql_bytes spans binlogs. It mostly exists for dba
                   amussement
     sql_bytes - Bytes of unprocessed replication logs
-    ss - None or the results of running "show slave status'
+    ss - None or the results of running "show subordinate status'
     """
 
     ret = {'sql_bytes': INVALID,
@@ -1462,14 +1462,14 @@ def calc_slave_lag(slave_hostaddr, dead_master=False):
            'io_bytes': INVALID,
            'io_binlogs': INVALID,
            'sbm': INVALID,
-           'ss': {'Slave_IO_Running': INVALID,
-                  'Slave_SQL_Running': INVALID,
-                  'Master_Host': INVALID,
-                  'Master_Port': INVALID}}
+           'ss': {'Subordinate_IO_Running': INVALID,
+                  'Subordinate_SQL_Running': INVALID,
+                  'Main_Host': INVALID,
+                  'Main_Port': INVALID}}
     try:
-        ss = get_slave_status(slave_hostaddr)
+        ss = get_subordinate_status(subordinate_hostaddr)
     except ReplicationError:
-        # Not a slave, so return dict of INVALID
+        # Not a subordinate, so return dict of INVALID
         return ret
     except MySQLdb.OperationalError as detail:
         (error_code, msg) = detail.args
@@ -1482,42 +1482,42 @@ def calc_slave_lag(slave_hostaddr, dead_master=False):
 
     ret['ss'] = ss
 
-    # if this is a GTID+auto-position slave, and we're running
+    # if this is a GTID+auto-position subordinate, and we're running
     # this for the first time, we won't have values for this stuff.
     # so we'll make something up just so we can get started.
-    if ss['Auto_Position'] and not ss['Relay_Master_Log_File']:
-        slave_sql_pos = 1
-        slave_io_pos = 1
-        slave_sql_binlog_num = '000001'
-        slave_io_binlog_num = '000001'
+    if ss['Auto_Position'] and not ss['Relay_Main_Log_File']:
+        subordinate_sql_pos = 1
+        subordinate_io_pos = 1
+        subordinate_sql_binlog_num = '000001'
+        subordinate_io_binlog_num = '000001'
     else:
-        slave_sql_pos = ss['Exec_Master_Log_Pos']
-        slave_sql_binlog = ss['Relay_Master_Log_File']
-        _, slave_sql_binlog_num = re.split('\.', slave_sql_binlog)
-        slave_io_pos = ss['Read_Master_Log_Pos']
-        slave_io_binlog = ss['Master_Log_File']
-        _, slave_io_binlog_num = re.split('\.', slave_io_binlog)
+        subordinate_sql_pos = ss['Exec_Main_Log_Pos']
+        subordinate_sql_binlog = ss['Relay_Main_Log_File']
+        _, subordinate_sql_binlog_num = re.split('\.', subordinate_sql_binlog)
+        subordinate_io_pos = ss['Read_Main_Log_Pos']
+        subordinate_io_binlog = ss['Main_Log_File']
+        _, subordinate_io_binlog_num = re.split('\.', subordinate_io_binlog)
 
-    master_hostaddr = host_utils.HostAddr(':'.join((ss['Master_Host'],
-                                                    str(ss['Master_Port']))))
-    if not dead_master:
+    main_hostaddr = host_utils.HostAddr(':'.join((ss['Main_Host'],
+                                                    str(ss['Main_Port']))))
+    if not dead_main:
         try:
-            master_logs = get_master_logs(master_hostaddr)
+            main_logs = get_main_logs(main_hostaddr)
 
-            (ret['sql_bytes'], ret['sql_binlogs']) = calc_binlog_behind(slave_sql_binlog_num,
-                                                                        slave_sql_pos,
-                                                                        master_logs)
-            (ret['io_bytes'], ret['io_binlogs']) = calc_binlog_behind(slave_io_binlog_num,
-                                                                      slave_io_pos,
-                                                                      master_logs)
+            (ret['sql_bytes'], ret['sql_binlogs']) = calc_binlog_behind(subordinate_sql_binlog_num,
+                                                                        subordinate_sql_pos,
+                                                                        main_logs)
+            (ret['io_bytes'], ret['io_binlogs']) = calc_binlog_behind(subordinate_io_binlog_num,
+                                                                      subordinate_io_pos,
+                                                                      main_logs)
         except _mysql_exceptions.OperationalError as detail:
             (error_code, msg) = detail.args
             if error_code != MYSQL_ERROR_CONN_HOST_ERROR:
                 raise
-            # we can compute real lag because the master is dead
+            # we can compute real lag because the main is dead
 
     try:
-        ret['sbm'] = calc_alt_sbm(slave_hostaddr, ss['Master_Server_Id'])
+        ret['sbm'] = calc_alt_sbm(subordinate_hostaddr, ss['Main_Server_Id'])
     except MySQLdb.ProgrammingError as detail:
         (error_code, msg) = detail.args
         if error_code != MYSQL_ERROR_NO_SUCH_TABLE:
@@ -1528,25 +1528,25 @@ def calc_slave_lag(slave_hostaddr, dead_master=False):
     return ret
 
 
-def calc_alt_sbm(instance, master_server_id):
-    """ Calculate seconds behind using heartbeat + time on slave server
+def calc_alt_sbm(instance, main_server_id):
+    """ Calculate seconds behind using heartbeat + time on subordinate server
 
     Args:
-    instance - A hostAddr object of a slave server
-    master_server_id - The server_id of the master server
+    instance - A hostAddr object of a subordinate server
+    main_server_id - The server_id of the main server
 
     Returns:
-    An int of the calculated seconds behind master or None
+    An int of the calculated seconds behind main or None
     """
     conn = connect_mysql(instance)
     cursor = conn.cursor()
 
     sql = ''.join(("SELECT TIMESTAMPDIFF(SECOND,ts, NOW()) AS 'sbm' "
                    "FROM {METADATA_DB}.heartbeat "
-                   "WHERE server_id= %(Master_Server_Id)s"))
+                   "WHERE server_id= %(Main_Server_Id)s"))
 
     cursor.execute(sql.format(METADATA_DB=METADATA_DB),
-                   {'Master_Server_Id': master_server_id})
+                   {'Main_Server_Id': main_server_id})
     row = cursor.fetchone()
     if row:
         return row['sbm']
@@ -1555,10 +1555,10 @@ def calc_alt_sbm(instance, master_server_id):
 
 
 def get_heartbeat(instance):
-    """ Get the most recent heartbeat on a slave
+    """ Get the most recent heartbeat on a subordinate
 
     Args:
-    instance - A hostAddr object of a slave server
+    instance - A hostAddr object of a subordinate server
 
     Returns:
     A datetime.datetime object.
@@ -1566,12 +1566,12 @@ def get_heartbeat(instance):
     conn = connect_mysql(instance)
     cursor = conn.cursor()
 
-    slave_status = get_slave_status(instance)
+    subordinate_status = get_subordinate_status(instance)
     sql = ''.join(("SELECT ts "
                    "FROM {METADATA_DB}.heartbeat "
-                   "WHERE server_id= %(Master_Server_Id)s"))
+                   "WHERE server_id= %(Main_Server_Id)s"))
 
-    cursor.execute(sql.format(METADATA_DB=METADATA_DB), slave_status)
+    cursor.execute(sql.format(METADATA_DB=METADATA_DB), subordinate_status)
     row = cursor.fetchone()
     if not row:
         return None
@@ -1590,18 +1590,18 @@ def get_pitr_data(instance):
     ret = dict()
     ret['heartbeat'] = str(get_heartbeat(instance))
     ret['repl_positions'] = []
-    master_status = get_master_status(instance)
-    ret['repl_positions'].append((master_status['File'], master_status['Position']))
-    if 'Executed_Gtid_Set' in master_status:
-        ret['Executed_Gtid_Set'] = master_status['Executed_Gtid_Set']
+    main_status = get_main_status(instance)
+    ret['repl_positions'].append((main_status['File'], main_status['Position']))
+    if 'Executed_Gtid_Set' in main_status:
+        ret['Executed_Gtid_Set'] = main_status['Executed_Gtid_Set']
     else:
         ret['Executed_Gtid_Set'] = None
 
     try:
-        ss = get_slave_status(instance)
-        ret['repl_positions'].append((ss['Relay_Master_Log_File'], ss['Exec_Master_Log_Pos']))
+        ss = get_subordinate_status(instance)
+        ret['repl_positions'].append((ss['Relay_Main_Log_File'], ss['Exec_Main_Log_Pos']))
     except ReplicationError:
-        # we are running on a master, don't care about this exception
+        # we are running on a main, don't care about this exception
         pass
 
     return ret

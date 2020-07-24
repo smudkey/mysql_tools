@@ -23,7 +23,7 @@ CHECKSUM_DEFAULTS = ' '.join(('--chunk-time=0.1',
 
 # These are used when running pt-table-sync, which we'll use if
 # we found some chunk diffs during step 1.
-CHECKSUM_SYNC_DEFAULTS = ' '.join(('--sync-to-master',
+CHECKSUM_SYNC_DEFAULTS = ' '.join(('--sync-to-main',
                                    '--chunk-size=500',
                                    '--print',
                                    '--verbose'))
@@ -43,7 +43,7 @@ TABLE_DEF = ("CREATE TABLE IF NOT EXISTS {db}.{tbl} ( "
              "id              INT UNSIGNED NOT NULL AUTO_INCREMENT,"
              "reported_at     DATETIME NOT NULL DEFAULT '0000-00-00 00:00:00',"
              "instance        VARCHAR(40) NOT NULL DEFAULT '',"
-             "master_instance VARCHAR(40) NOT NULL DEFAULT '',"
+             "main_instance VARCHAR(40) NOT NULL DEFAULT '',"
              "db              VARCHAR(30) NOT NULL DEFAULT '',"
              "tbl             VARCHAR(64) NOT NULL DEFAULT '',"
              "elapsed_time_ms INT NOT NULL DEFAULT -1,"
@@ -68,7 +68,7 @@ TABLE_DEF = ("CREATE TABLE IF NOT EXISTS {db}.{tbl} ( "
              "sync_stderr     TEXT,"
              "sync_rc         INT NOT NULL DEFAULT -1,"
              "PRIMARY KEY(id),"
-             "UNIQUE KEY(master_instance, instance, db, tbl, reported_at),"
+             "UNIQUE KEY(main_instance, instance, db, tbl, reported_at),"
              "INDEX(reported_at),"
              "INDEX(checksum_status, reported_at) )")
 
@@ -78,7 +78,7 @@ log = logging.getLogger(__name__)
 #
 def create_checksum_detail_table(instance):
     """ Args:
-            instance: the master instance for this replica set
+            instance: the main instance for this replica set
 
         Returns: Nothing.  If this fails, throw an exception.
     """
@@ -219,7 +219,7 @@ def main():
 
     if instance not in \
             zk.get_all_mysql_instances_by_type(host_utils.REPLICA_ROLE_MASTER):
-        raise Exception("Instance is not a master in ZK")
+        raise Exception("Instance is not a main in ZK")
 
     # If enabled, try to create the table that holds the checksum info.
     # If not enabled, make sure that the table exists.
@@ -231,17 +231,17 @@ def main():
                             "Consider not using the -C option or create it "
                             "yourself.")
 
-    # Determine what replica set we belong to and get a list of slaves.
+    # Determine what replica set we belong to and get a list of subordinates.
     replica_set = zk.get_replica_set_from_instance(instance)
 
-    slaves = set()
+    subordinates = set()
     for rtype in host_utils.REPLICA_ROLE_SLAVE, host_utils.REPLICA_ROLE_DR_SLAVE:
         s = zk.get_mysql_instance_from_replica_set(replica_set, rtype)
         if s:
-            slaves.add(s)
+            subordinates.add(s)
 
-    if len(slaves) == 0:
-        log.info("This server has no slaves.  Nothing to do.")
+    if len(subordinates) == 0:
+        log.info("This server has no subordinates.  Nothing to do.")
         return
 
     # in theory, we could allow multiple instances of this script to run
@@ -259,8 +259,8 @@ def main():
              "server".format(replica_set))
 
     # before we even start this, make sure replication is OK.
-    for slave in slaves:
-        mysql_lib.assert_replication_sanity(slave)
+    for subordinate in subordinates:
+        mysql_lib.assert_replication_sanity(subordinate)
 
     if args.dbs:
         db_to_check = set(args.dbs.split(','))
@@ -299,7 +299,7 @@ def main():
             # parse each line of STDOUT (there should only be one with
             # actual data).  We only care about errors, rows, chunks, and
             # skipped, since we'll need to figure out diffs separately for
-            # each slave box.
+            # each subordinate box.
             for line in c_out.split("\n"):
                 results = parse_checksum_row(line)
                 if results:
@@ -308,7 +308,7 @@ def main():
                     chunk_count = int(results[4])
                     chunk_skips = int(results[5])
 
-                    for slave in slaves:
+                    for subordinate in subordinates:
                         rows_checked = 'NO'
                         sync_cmd = ""
                         sync_out = ""
@@ -317,7 +317,7 @@ def main():
                         row_diffs = 0
 
                         elapsed_time_ms,\
-                            chunk_diffs = check_one_replica(slave,
+                            chunk_diffs = check_one_replica(subordinate,
                                                             db, tbl)
 
                         # if we skipped some chunks or there were errors,
@@ -353,7 +353,7 @@ def main():
                                     checksum_status = 'CHUNKS_WERE_SKIPPED'
 
                                 sync_cmd, sync_out, sync_err, sync_ret, \
-                                    row_diffs = checksum_tbl_via_sync(slave,
+                                    row_diffs = checksum_tbl_via_sync(subordinate,
                                                                       db,
                                                                       tbl)
 
@@ -369,8 +369,8 @@ def main():
 
                         # Checksum process is complete, store the results.
                         #
-                        data = {'instance': slave,
-                                'master_instance': instance,
+                        data = {'instance': subordinate,
+                                'main_instance': instance,
                                 'db': db,
                                 'tbl': tbl,
                                 'elapsed_time_ms': elapsed_time_ms,
@@ -408,7 +408,7 @@ def main():
 #
 def write_checksum_status(instance, data):
     """ Args:
-            instance: Host info for the master that we'll connect to.
+            instance: Host info for the main that we'll connect to.
             data: A dictionary containing the row to insert.  See
                   the table definition at the top of the script for info.
 
@@ -420,7 +420,7 @@ def write_checksum_status(instance, data):
         sql = ("INSERT INTO test.checksum_detail SET "
                "reported_at=NOW(), "
                "instance=%(instance)s, "
-               "master_instance=%(master_instance)s, "
+               "main_instance=%(main_instance)s, "
                "db=%(db)s, tbl=%(tbl)s, "
                "elapsed_time_ms=%(elapsed_time_ms)s, "
                "chunk_count=%(chunk_count)s, "
@@ -449,19 +449,19 @@ def write_checksum_status(instance, data):
 
 # check_one_replica
 #
-def check_one_replica(slave_instance, db, tbl):
+def check_one_replica(subordinate_instance, db, tbl):
     diff_count = -1
     elapsed_time_ms = -1
 
     try:
-        conn = mysql_lib.connect_mysql(slave_instance, 'dbascript')
+        conn = mysql_lib.connect_mysql(subordinate_instance, 'dbascript')
         cursor = conn.cursor()
 
         # first, count the diffs
         sql = ("SELECT COUNT(*) AS diffs FROM test.checksum "
-               "WHERE (master_cnt <> this_cnt "
-               "OR master_crc <> this_crc "
-               "OR ISNULL(master_crc) <> ISNULL(this_crc)) "
+               "WHERE (main_cnt <> this_cnt "
+               "OR main_crc <> this_crc "
+               "OR ISNULL(main_crc) <> ISNULL(this_crc)) "
                "AND (db=%(db)s AND tbl=%(tbl)s)")
         cursor.execute(sql, {'db': db, 'tbl': tbl})
         row = cursor.fetchone()
@@ -488,7 +488,7 @@ def check_one_replica(slave_instance, db, tbl):
 #
 def checksum_tbl(instance, db, tbl):
     """ Args:
-            instance: the master instance to run against
+            instance: the main instance to run against
             db: the database to checksum
             tbl: the table within the database to checksum
 
@@ -518,7 +518,7 @@ def checksum_tbl(instance, db, tbl):
 
 
 # Run pt-table-sync in read-only (print, verbose) mode to find the
-# actual number of rows which differ between master and slave.
+# actual number of rows which differ between main and subordinate.
 #
 def checksum_tbl_via_sync(instance, db, tbl):
     username, password = mysql_lib.get_mysql_user_for_role('ptchecksum')

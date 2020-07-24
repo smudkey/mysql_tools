@@ -33,26 +33,26 @@ def main():
         exit_unknown_error()
 
     if not inst:
-        # if there is not another slave in zk, there is not possibility
+        # if there is not another subordinate in zk, there is not possibility
         # it is ok
-        exit_other_slave_not_running_etl()
+        exit_other_subordinate_not_running_etl()
     try:
         running = mysql_backup_status.csv_backups_running(instance)
     except:
-        exit_other_slave_not_running_etl()
+        exit_other_subordinate_not_running_etl()
 
     if not running:
-        exit_other_slave_not_running_etl()
+        exit_other_subordinate_not_running_etl()
 
-    exit_other_slave_running_etl()
+    exit_other_subordinate_running_etl()
 
 
-def exit_other_slave_not_running_etl():
+def exit_other_subordinate_not_running_etl():
     print "OTHER_SLAVE_NOT_RUNNING_ETL"
     sys.exit(OTHER_SLAVE_NOT_RUNNING_ETL)
 
 
-def exit_other_slave_running_etl():
+def exit_other_subordinate_running_etl():
     print "OTHER_SLAVE_RUNNING_ETL"
     sys.exit(OTHER_SLAVE_RUNNING_ETL)
 

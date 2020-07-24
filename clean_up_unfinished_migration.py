@@ -32,10 +32,10 @@ def clean_up_migration(source_replica_set):
     destination_replica_set = migration['destination_replica_set']
     mig_lock_identifier = migration['lock_identifier']
     zk = host_utils.MysqlZookeeper()
-    destination_master = zk.get_mysql_instance_from_replica_set(destination_replica_set)
+    destination_main = zk.get_mysql_instance_from_replica_set(destination_replica_set)
 
     try:
-        mysql_lib.get_slave_status(destination_master)
+        mysql_lib.get_subordinate_status(destination_main)
         reset_repl = True
     except:
         reset_repl = False
@@ -43,22 +43,22 @@ def clean_up_migration(source_replica_set):
     if reset_repl:
         log.info('Taking promotion locks')
         dest_lock_identifier = mysql_failover.get_promotion_lock(destination_replica_set)
-        log.info('Removing replication from destination master {}'
-                 ''.format(destination_master))
+        log.info('Removing replication from destination main {}'
+                 ''.format(destination_main))
         try:
-            mysql_lib.reset_slave(destination_master)
+            mysql_lib.reset_subordinate(destination_main)
         except:
             raise
         finally:
             mysql_failover.release_promotion_lock(dest_lock_identifier)
 
     (orphans_tmp, orphaned_but_used_tmp, _) = \
-            find_shard_mismatches.find_shard_mismatches(destination_master)
+            find_shard_mismatches.find_shard_mismatches(destination_main)
 
-    orphans = orphans_tmp[destination_master] if \
-            destination_master in orphans_tmp else []
-    orphaned_but_used = orphaned_but_used_tmp[destination_master] if \
-            destination_master in orphaned_but_used_tmp else []
+    orphans = orphans_tmp[destination_main] if \
+            destination_main in orphans_tmp else []
+    orphaned_but_used = orphaned_but_used_tmp[destination_main] if \
+            destination_main in orphaned_but_used_tmp else []
 
     if orphaned_but_used:
         log.info('Orphaned but used dbs: {}'.format(', '.join(orphaned_but_used)))
@@ -66,7 +66,7 @@ def clean_up_migration(source_replica_set):
 
     if orphans:
         log.info('Orphaned dbs: {}'.format(', '.join(orphans)))
-        fix_orphaned_shards.rename_db_to_drop(destination_master, orphans)
+        fix_orphaned_shards.rename_db_to_drop(destination_main, orphans)
 
     start_shard_migration.finish_migration_log(mig_lock_identifier,
                                                start_shard_migration.STATUS_ABORTED)

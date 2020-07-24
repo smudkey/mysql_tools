@@ -29,7 +29,7 @@ def restart_maxwell_if_not_exists(instance):
 
     output_target = 'file'
 
-    # master writes to kafka, everything else writes to /dev/null,
+    # main writes to kafka, everything else writes to /dev/null,
     # at least for now.
     if instance.hostname_prefix in environment_specific.MAXWELL_TARGET_MAP \
             and replica_type == host_utils.REPLICA_ROLE_MASTER:
@@ -88,8 +88,8 @@ def restart_pt_kill_if_not_exists(instance):
 def manage_pt_heartbeat(instance):
     """
     Restarts ptheartbeat if it isn't currently running and the
-    replica role type is master, or stop it if it is running on
-    a non-master.
+    replica role type is main, or stop it if it is running on
+    a non-main.
 
     Args:
         instance (host_utils.HostAddr): host to check for ptheartbeat
@@ -111,7 +111,7 @@ def manage_pt_heartbeat(instance):
     elif replica_type != host_utils.REPLICA_ROLE_MASTER and \
             pthb_user in connected_users:
         host_utils.manage_pt_heartbeat(instance.port, action='stop')
-        log.info('Stopped pt-heartbeat on non-master replica')
+        log.info('Stopped pt-heartbeat on non-main replica')
 
 
 def main():

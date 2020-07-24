@@ -78,14 +78,14 @@ def launch_restores_as_needed(dry_run=True):
                 launched = launched + 1
                 if not dry_run:
                     try:
-                        launch_a_slave_replacement(replica_set)
+                        launch_a_subordinate_replacement(replica_set)
                     except Exception as e:
                         log.error('Could not launch replacement due to error: '
                                   '{e}'.format(e=e))
 
 
-def launch_a_slave_replacement(replica_set):
-    """ Choose a slave to replace and launch it
+def launch_a_subordinate_replacement(replica_set):
+    """ Choose a subordinate to replace and launch it
 
     Args:
     replica - A MySQL replica set

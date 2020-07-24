@@ -16,17 +16,17 @@ def main():
                         default=False,
                         action='store_true')
     args = parser.parse_args()
-    slave_hostaddr = host_utils.HostAddr(args.replica)
+    subordinate_hostaddr = host_utils.HostAddr(args.replica)
 
     if args.watch_for_catch_up:
-        mysql_lib.wait_for_catch_up(slave_hostaddr)
+        mysql_lib.wait_for_catch_up(subordinate_hostaddr)
     else:
-        ret = mysql_lib.calc_slave_lag(slave_hostaddr)
+        ret = mysql_lib.calc_subordinate_lag(subordinate_hostaddr)
         print "Heartbeat_seconds_behind: {sbm}".format(sbm=ret['sbm'])
-        print "Slave_IO_Running: {Slave_IO_Running} ".format(Slave_IO_Running=ret['ss']['Slave_IO_Running'])
+        print "Subordinate_IO_Running: {Subordinate_IO_Running} ".format(Subordinate_IO_Running=ret['ss']['Subordinate_IO_Running'])
         print "IO_lag_bytes: {io_bytes}".format(io_bytes=ret['io_bytes'])
         print "IO_lag_binlogs: {io_binlogs}".format(io_binlogs=ret['io_binlogs'])
-        print "Slave_SQL_Running: {Slave_IO_Running} ".format(Slave_IO_Running=ret['ss']['Slave_SQL_Running'])
+        print "Subordinate_SQL_Running: {Subordinate_IO_Running} ".format(Subordinate_IO_Running=ret['ss']['Subordinate_SQL_Running'])
         print "SQL_lag_bytes: {sql_bytes}".format(sql_bytes=ret['sql_bytes'])
         print "SQL_lag_binlogs: {sql_binlogs}".format(sql_binlogs=ret['sql_binlogs'])
 

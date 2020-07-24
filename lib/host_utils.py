@@ -27,7 +27,7 @@ HOSTNAME = socket.getfqdn().split('.')[0]
 MYSQL_CNF_FILE = '/etc/mysql/my.cnf'
 MYSQL_INIT_FILE = '/etc/mysql/init.sql'
 MYSQL_UPGRADE_CNF_FILE = '/etc/mysql/mysql_upgrade.cnf'
-MYSQL_NOREPL_CNF_FILE = '/etc/mysql/skip_slave_start.cnf'
+MYSQL_NOREPL_CNF_FILE = '/etc/mysql/skip_subordinate_start.cnf'
 MYSQL_DS_ZK = '/var/config/config.services.dataservices.mysql_databases'
 MYSQL_DR_ZK = '/var/config/config.services.disaster_recoverydb'
 MYSQL_GEN_ZK = '/var/config/config.services.general_mysql_databases_config'
@@ -39,9 +39,9 @@ MYSQL_STARTED = 0
 MYSQL_STOPPED = 1
 MYSQL_SUPERVISOR_PROC = 'mysqld-3306'
 MYSQL_UPGRADE = '/usr/bin/mysql_upgrade'
-REPLICA_ROLE_DR_SLAVE = 'dr_slave'
-REPLICA_ROLE_MASTER = 'master'
-REPLICA_ROLE_SLAVE = 'slave'
+REPLICA_ROLE_DR_SLAVE = 'dr_subordinate'
+REPLICA_ROLE_MASTER = 'main'
+REPLICA_ROLE_SLAVE = 'subordinate'
 REPLICA_TYPES = [REPLICA_ROLE_MASTER,
                  REPLICA_ROLE_SLAVE,
                  REPLICA_ROLE_DR_SLAVE]
@@ -99,7 +99,7 @@ def find_root_volume():
     """ Figure out what top-level mount/directory we are installing to.
         Whichever one is a mount point is the valid one.  We take the
         first one that we find; /raid0 will eventually be going away
-        in favor of /mnt with masterless puppet anyway.
+        in favor of /mnt with mainless puppet anyway.
     """
     root_volume = None
     for mount_point in ACCEPTABLE_ROOT_VOLUMES:
@@ -346,10 +346,10 @@ class MysqlZookeeper:
 
         Example:
         {u'db00001': {u'db': None,
-                  u'master': {u'host': u'sharddb-1-31',
+                  u'main': {u'host': u'sharddb-1-31',
                               u'port': 3306},
                   u'passwd': u'redacted',
-                  u'slave': {u'host': u'sharddb-1-32',
+                  u'subordinate': {u'host': u'sharddb-1-32',
                              u'port': 3306},
                   u'user': u'pbuser'},
         ...
@@ -373,10 +373,10 @@ class MysqlZookeeper:
 
         Example:
         {u'abexperimentsdb001': {u'db': u'abexperimentsdb',
-                                 u'master': {u'host': u'abexperimentsdb-1-1',
+                                 u'main': {u'host': u'abexperimentsdb-1-1',
                                              u'port': 3306},
                                 u'passwd': u'redacted',
-                                u'slave': {u'host': u'abexperimentsdb-12',
+                                u'subordinate': {u'host': u'abexperimentsdb-12',
                                            u'port': 3306},
                                 u'user': u'redacted'},
         ...
@@ -399,8 +399,8 @@ class MysqlZookeeper:
         A dict of all MySQL disaster recovery instances.
 
         Example:
-        {u'db00018': {u'dr_slave': {u'host': u'sharddb-18-33', u'port': 3306}},
-         u'db00015': {u'dr_slave': {u'host': u'sharddb-15-31', u'port': 3306}},
+        {u'db00018': {u'dr_subordinate': {u'host': u'sharddb-18-33', u'port': 3306}},
+         u'db00015': {u'dr_subordinate': {u'host': u'sharddb-15-31', u'port': 3306}},
         ...
         """
         global _dr_map
@@ -560,19 +560,19 @@ class MysqlZookeeper:
 
         Example:
         {u'db00001': {u'db': None,
-                  u'master': {u'host': u'sharddb-1-43',
+                  u'main': {u'host': u'sharddb-1-43',
                               u'port': 3306},
                   u'passwd': u'redacted',
-                  u'slave': {u'host': u'sharddb-1-42',
+                  u'subordinate': {u'host': u'sharddb-1-42',
                              u'port': 3306},
-                  u'dr_slave': {u'host': u'sharddb-1-44',
+                  u'dr_subordinate': {u'host': u'sharddb-1-44',
                                 u'port': 3306},
                   u'user': u'pbuser'},
          u'abexperimentsdb001': {u'db': u'abexperimentsdb',
-                                 u'master': {u'host': u'abexperimentsdb-1-10',
+                                 u'main': {u'host': u'abexperimentsdb-1-10',
                                              u'port': 3306},
                                 u'passwd': u'redacted',
-                                u'slave': {u'host': u'abexperimentsdb-1-12',
+                                u'subordinate': {u'host': u'abexperimentsdb-1-12',
                                            u'port': 3306},
                                 u'user': u'redacted'},
         ...
@@ -658,7 +658,7 @@ class MysqlZookeeper:
         Args:
         replica_set - string name of a replica set, ie db00666
         repl_type - Optional, a replica type with valid options are entries
-                    in REPLICA_TYPES. Default is 'master'.
+                    in REPLICA_TYPES. Default is 'main'.
 
         Returns:
         A hostaddr object or None
@@ -709,13 +709,13 @@ class MysqlZookeeper:
         return _instance_rs_map[instance]
 
     def get_replica_type_from_instance(self, instance):
-        """ Get the replica set role (master, slave, etc) based on zk info
+        """ Get the replica set role (main, subordinate, etc) based on zk info
         ## TODO: use consistent naming.  role or type, not both.
         Args:
         instance - a hostaddr object
 
         Returns:
-        replica_set_role - A replica set role of master, slave, etc...
+        replica_set_role - A replica set role of main, subordinate, etc...
         """
         config = self.get_all_mysql_config()
         for rs in config:
@@ -757,7 +757,7 @@ class MysqlZookeeper:
 
         Returns:
             A dict where the key is the MySQL replica sets and the
-            value is the set of dbs on that master instance.
+            value is the set of dbs on that main instance.
         """
         zk_shard_map = self.get_zk_mysql_shard_map()
         rs_to_dbs_map = dict()
@@ -799,7 +799,7 @@ class MysqlZookeeper:
 
         Args:
             shard - A shard name
-            repl_type - Replica type, master is default
+            repl_type - Replica type, main is default
 
         Returns:
             A hostaddr object for an instance of the replica set

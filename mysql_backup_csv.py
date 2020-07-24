@@ -246,7 +246,7 @@ class mysql_backup_csv:
                                        p=table_tuple[2]))
             return
 
-        # attempt to take lock by writing a lock to the master
+        # attempt to take lock by writing a lock to the main
         tmp_dir_db = None
         lock_identifier = None
         extend_lock_thread = None
@@ -500,11 +500,11 @@ class mysql_backup_csv:
         """
         zk = host_utils.MysqlZookeeper()
         replica_set = zk.get_replica_set_from_instance(self.instance)
-        master = zk.get_mysql_instance_from_replica_set(
+        main = zk.get_mysql_instance_from_replica_set(
                     replica_set,
                     host_utils.REPLICA_ROLE_MASTER)
-        master_conn = mysql_lib.connect_mysql(master, role='dbascript')
-        cursor = master_conn.cursor()
+        main_conn = mysql_lib.connect_mysql(main, role='dbascript')
+        cursor = main_conn.cursor()
         params = {'table_name': table_tuple[0],
                   'hostname': self.instance.hostname,
                   'port': self.instance.port,
@@ -521,7 +521,7 @@ class mysql_backup_csv:
         return (row > 0)
 
     def take_backup_lock(self, table_tuple):
-        """ Write a lock row on to the master
+        """ Write a lock row on to the main
 
         Args:
             table_tuple - the tuple containing info about the table/partition
@@ -532,11 +532,11 @@ class mysql_backup_csv:
         """
         zk = host_utils.MysqlZookeeper()
         replica_set = zk.get_replica_set_from_instance(self.instance)
-        master = zk.get_mysql_instance_from_replica_set(
+        main = zk.get_mysql_instance_from_replica_set(
                     replica_set,
                     host_utils.REPLICA_ROLE_MASTER)
-        master_conn = mysql_lib.connect_mysql(master, role='dbascript')
-        cursor = master_conn.cursor()
+        main_conn = mysql_lib.connect_mysql(main, role='dbascript')
+        cursor = main_conn.cursor()
 
         lock_identifier = str(uuid.uuid4())
         log.debug('Taking backup lock: {replica_set} {tbl} partition {p}'
@@ -562,10 +562,10 @@ class mysql_backup_csv:
                "").format(db=mysql_lib.METADATA_DB,
                           tbl=CSV_BACKUP_LOCK_TABLE_NAME,
                           locks_held_time=LOCKS_HELD_TIME)
-        cursor = master_conn.cursor()
+        cursor = main_conn.cursor()
         try:
             cursor.execute(sql, params)
-            master_conn.commit()
+            main_conn.commit()
         except _mysql_exceptions.IntegrityError:
             lock_identifier = None
             sql = ("SELECT hostname, port, expires "
@@ -608,10 +608,10 @@ class mysql_backup_csv:
             if (time.time() - last_update) > LOCK_EXTEND_FREQUENCY:
                 zk = host_utils.MysqlZookeeper()
                 replica_set = zk.get_replica_set_from_instance(self.instance)
-                master = zk.get_mysql_instance_from_replica_set(replica_set,
+                main = zk.get_mysql_instance_from_replica_set(replica_set,
                     host_utils.REPLICA_ROLE_MASTER)
-                master_conn = mysql_lib.connect_mysql(master, role='dbascript')
-                cursor = master_conn.cursor()
+                main_conn = mysql_lib.connect_mysql(main, role='dbascript')
+                cursor = main_conn.cursor()
 
                 params = {'lock_identifier': lock_identifier}
                 sql = ('UPDATE {db}.{tbl} '
@@ -621,7 +621,7 @@ class mysql_backup_csv:
                                   tbl=CSV_BACKUP_LOCK_TABLE_NAME,
                                   locks_held_time=LOCKS_HELD_TIME)
                 cursor.execute(sql, params)
-                master_conn.commit()
+                main_conn.commit()
                 log.debug(cursor._executed)
                 last_update = time.time()
             extend_lock_stop_event.wait(.5)
@@ -634,10 +634,10 @@ class mysql_backup_csv:
         """
         zk = host_utils.MysqlZookeeper()
         replica_set = zk.get_replica_set_from_instance(self.instance)
-        master = zk.get_mysql_instance_from_replica_set(replica_set,
+        main = zk.get_mysql_instance_from_replica_set(replica_set,
                     host_utils.REPLICA_ROLE_MASTER)
-        master_conn = mysql_lib.connect_mysql(master, role='dbascript')
-        cursor = master_conn.cursor()
+        main_conn = mysql_lib.connect_mysql(main, role='dbascript')
+        cursor = main_conn.cursor()
 
         params = {'lock_identifier': lock_identifier}
         sql = ('UPDATE {db}.{tbl} '
@@ -647,7 +647,7 @@ class mysql_backup_csv:
                '').format(db=mysql_lib.METADATA_DB,
                           tbl=CSV_BACKUP_LOCK_TABLE_NAME)
         cursor.execute(sql, params)
-        master_conn.commit()
+        main_conn.commit()
         log.debug(cursor._executed)
 
     def ensure_backup_locks_sanity(self):
@@ -657,12 +657,12 @@ class mysql_backup_csv:
         """
         zk = host_utils.MysqlZookeeper()
         replica_set = zk.get_replica_set_from_instance(self.instance)
-        master = zk.get_mysql_instance_from_replica_set(replica_set,
+        main = zk.get_mysql_instance_from_replica_set(replica_set,
                     host_utils.REPLICA_ROLE_MASTER)
-        master_conn = mysql_lib.connect_mysql(master, role='dbascript')
-        cursor = master_conn.cursor()
+        main_conn = mysql_lib.connect_mysql(main, role='dbascript')
+        cursor = main_conn.cursor()
 
-        if not mysql_lib.does_table_exist(master, mysql_lib.METADATA_DB,
+        if not mysql_lib.does_table_exist(main, mysql_lib.METADATA_DB,
                                           CSV_BACKUP_LOCK_TABLE_NAME):
             log.debug('Creating missing metadata table')
             cursor.execute(CSV_BACKUP_LOCK_TABLE.format(
@@ -678,16 +678,16 @@ class mysql_backup_csv:
                '').format(db=mysql_lib.METADATA_DB,
                           tbl=CSV_BACKUP_LOCK_TABLE_NAME)
         cursor.execute(sql, params)
-        master_conn.commit()
+        main_conn.commit()
 
     def release_expired_locks(self):
         """ Release any expired locks """
         zk = host_utils.MysqlZookeeper()
         replica_set = zk.get_replica_set_from_instance(self.instance)
-        master = zk.get_mysql_instance_from_replica_set(replica_set,
+        main = zk.get_mysql_instance_from_replica_set(replica_set,
                     host_utils.REPLICA_ROLE_MASTER)
-        master_conn = mysql_lib.connect_mysql(master, role='dbascript')
-        cursor = master_conn.cursor()
+        main_conn = mysql_lib.connect_mysql(main, role='dbascript')
+        cursor = main_conn.cursor()
 
         sql = ('UPDATE {db}.{tbl} '
                'SET lock_active = NULL, released = NOW() '
@@ -695,24 +695,24 @@ class mysql_backup_csv:
                '').format(db=mysql_lib.METADATA_DB,
                           tbl=CSV_BACKUP_LOCK_TABLE_NAME)
         cursor.execute(sql)
-        master_conn.commit()
+        main_conn.commit()
         log.debug(cursor._executed)
 
     def purge_old_expired_locks(self):
         """ Delete any locks older than 2 days """
         zk = host_utils.MysqlZookeeper()
         replica_set = zk.get_replica_set_from_instance(self.instance)
-        master = zk.get_mysql_instance_from_replica_set(replica_set,
+        main = zk.get_mysql_instance_from_replica_set(replica_set,
                     host_utils.REPLICA_ROLE_MASTER)
-        master_conn = mysql_lib.connect_mysql(master, role='dbascript')
-        cursor = master_conn.cursor()
+        main_conn = mysql_lib.connect_mysql(main, role='dbascript')
+        cursor = main_conn.cursor()
 
         sql = ('DELETE FROM {db}.{tbl} '
                'WHERE expires < NOW() - INTERVAL 2 DAY'
                '').format(db=mysql_lib.METADATA_DB,
                           tbl=CSV_BACKUP_LOCK_TABLE_NAME)
         cursor.execute(sql)
-        master_conn.commit()
+        main_conn.commit()
         log.debug(cursor._executed)
 
     def already_backed_up(self, table_tuple):

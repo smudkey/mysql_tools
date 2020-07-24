@@ -47,7 +47,7 @@ SAFE_UPDATE_PREFIXES = set(['sharddb', 'modsharddb'])
 SAFE_UPDATES_SQL = 'set global sql_safe_updates=on;'
 TOUCH_FOR_NO_CONFIG_OVERWRITE = '/etc/mysql/no_write_config'
 TOUCH_FOR_WRITABLE_IF_NOT_IN_ZK = '/etc/mysql/make_non_zk_server_writeable'
-UPGRADE_OVERRIDE_SETTINGS = {'skip_slave_start': None,
+UPGRADE_OVERRIDE_SETTINGS = {'skip_subordinate_start': None,
                              'skip_networking': None,
                              'innodb_fast_shutdown': '0'}
 UPGRADE_REMOVAL_SETTINGS = set(['enforce_storage_engine',
@@ -221,7 +221,7 @@ def config_read_only(host):
         # to treat it as if it was not in zk and therefore read_only set to ON
         replica_type = None
     if replica_type == host_utils.REPLICA_ROLE_MASTER:
-        log.info('Server is considered a master, therefore read_only '
+        log.info('Server is considered a main, therefore read_only '
                  'should be OFF')
         return READ_ONLY_OFF
     elif replica_type in (host_utils.REPLICA_ROLE_DR_SLAVE,
@@ -267,16 +267,16 @@ def create_skip_replication_cnf(override_dir=None):
     """
     skip_replication_parser = ConfigParser.RawConfigParser(allow_no_value=True)
     skip_replication_parser.add_section(MYSQLD_SECTION)
-    skip_replication_parser.set(MYSQLD_SECTION, 'skip_slave_start', None)
+    skip_replication_parser.set(MYSQLD_SECTION, 'skip_subordinate_start', None)
     if override_dir:
-        skip_slave_path = os.path.join(override_dir,
+        skip_subordinate_path = os.path.join(override_dir,
                                        os.path.basename(host_utils.MYSQL_NOREPL_CNF_FILE))
     else:
-        skip_slave_path = host_utils.MYSQL_NOREPL_CNF_FILE
-    log.info('Writing file {skip_slave_path}'
-             ''.format(skip_slave_path=skip_slave_path))
-    with open(skip_slave_path, "w") as skip_slave_handle:
-            skip_replication_parser.write(skip_slave_handle)
+        skip_subordinate_path = host_utils.MYSQL_NOREPL_CNF_FILE
+    log.info('Writing file {skip_subordinate_path}'
+             ''.format(skip_subordinate_path=skip_subordinate_path))
+    with open(skip_subordinate_path, "w") as skip_subordinate_handle:
+            skip_replication_parser.write(skip_subordinate_handle)
 
 
 def create_log_rotate_conf(parser, override_dir=None):
@@ -329,16 +329,16 @@ def create_maxwell_config(client_id, instance, exclude_dbs=None,
         namespace = hostname_prefix
     else:
         namespace = replica_set
-    master = zk.get_mysql_instance_from_replica_set(replica_set,
+    main = zk.get_mysql_instance_from_replica_set(replica_set,
                                                     host_utils.REPLICA_ROLE_MASTER)
     log.info('Writing file {}'.format(MAXWELL_CONF_FILE))
     excluded = ','.join(['mysql', 'test', exclude_dbs]) if exclude_dbs \
                 else 'mysql,test'
 
-    target_map = environment_specific.MAXWELL_TARGET_MAP[master.hostname_prefix]
+    target_map = environment_specific.MAXWELL_TARGET_MAP[main.hostname_prefix]
     with open(MAXWELL_CONF_FILE, "w") as f:
-        f.write(template.format(master_host=master.hostname,
-                                master_port=master.port,
+        f.write(template.format(main_host=main.hostname,
+                                main_port=main.port,
                                 instance_host=instance.hostname,
                                 instance_port=instance.port,
                                 username=username,
