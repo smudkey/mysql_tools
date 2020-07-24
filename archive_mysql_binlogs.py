@@ -70,7 +70,7 @@ def archive_mysql_binlogs(port, dry_run):
     log.info('Taking binlog archiver lock')
     lock_handle = host_utils.bind_lock_socket(BINLOG_LOCK_SOCKET)
     log_bin_dir = host_utils.get_cnf_setting('log_bin', port)
-    bin_logs = mysql_lib.get_master_logs(instance)
+    bin_logs = mysql_lib.get_main_logs(instance)
     logged_uploads = get_logged_binlog_uploads(instance)
     for binlog in bin_logs[:-1]:
         err_count = 0
@@ -150,7 +150,7 @@ def upload_binlog(instance, binlog, dry_run):
 
 
 def log_binlog_upload(instance, binlog):
-    """ Log to the master that a binlog has been uploaded
+    """ Log to the main that a binlog has been uploaded
 
     Args:
     instance - a hostAddr object
@@ -159,8 +159,8 @@ def log_binlog_upload(instance, binlog):
     zk = host_utils.MysqlZookeeper()
     binlog_creation = datetime.datetime.fromtimestamp(os.stat(binlog).st_atime)
     replica_set = zk.get_replica_set_from_instance(instance)
-    master = zk.get_mysql_instance_from_replica_set(replica_set)
-    conn = mysql_lib.connect_mysql(master, 'dbascript')
+    main = zk.get_mysql_instance_from_replica_set(replica_set)
+    conn = mysql_lib.connect_mysql(main, 'dbascript')
     cursor = conn.cursor()
     sql = ("REPLACE INTO {metadata_db}.{tbl} "
            "SET hostname = %(hostname)s, "
@@ -207,15 +207,15 @@ def ensure_binlog_archiving_table_sanity(instance):
     """ Create binlog archiving log table if missing, purge old data
 
     Args:
-    instance - A hostAddr object. Note: this function will find the master of
-               the instance if the instance is not a master
+    instance - A hostAddr object. Note: this function will find the main of
+               the instance if the instance is not a main
     """
     zk = host_utils.MysqlZookeeper()
     replica_set = zk.get_replica_set_from_instance(instance)
-    master = zk.get_mysql_instance_from_replica_set(replica_set)
-    conn = mysql_lib.connect_mysql(master, 'dbascript')
+    main = zk.get_mysql_instance_from_replica_set(replica_set)
+    conn = mysql_lib.connect_mysql(main, 'dbascript')
     cursor = conn.cursor()
-    if not mysql_lib.does_table_exist(master, mysql_lib.METADATA_DB,
+    if not mysql_lib.does_table_exist(main, mysql_lib.METADATA_DB,
             environment_specific.BINLOG_ARCHIVING_TABLE_NAME):
         log.debug('Creating missing metadata table')
         cursor.execute(BINLOG_ARCHIVING_TABLE.format(

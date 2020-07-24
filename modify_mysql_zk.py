@@ -19,9 +19,9 @@ def main():
                         help=("What modification to make. If 'auto', the host "
                               "replacement log will be used to determine what "
                               "what role to use. Default is auto."),
-                        choices=['add_slave', 'add_dr_slave',
-                                 'swap_master_and_slave',
-                                 'swap_slave_and_dr_slave'],
+                        choices=['add_subordinate', 'add_dr_subordinate',
+                                 'swap_main_and_subordinate',
+                                 'swap_subordinate_and_dr_subordinate'],
                         default='auto')
     parser.add_argument('instance',
                         help='What instance to act upon')
@@ -31,7 +31,7 @@ def main():
                         default=False,
                         action='store_true')
     parser.add_argument('--dangerous',
-                        help=('If you need to swap_master_and_slave in zk'
+                        help=('If you need to swap_main_and_subordinate in zk'
                               'outside of the failover script, that is '
                               'dangerous and you will need this flag.'),
                         default=False,
@@ -43,21 +43,21 @@ def main():
     if args.dry_run:
         log.removeHandler(chat_handler)
 
-    if action == 'add_slave':
+    if action == 'add_subordinate':
         add_replica_to_zk(instance, host_utils.REPLICA_ROLE_SLAVE,
                           args.dry_run)
-    elif action == 'add_dr_slave':
+    elif action == 'add_dr_subordinate':
         add_replica_to_zk(instance, host_utils.REPLICA_ROLE_DR_SLAVE,
                           args.dry_run)
-    elif action == 'swap_master_and_slave':
+    elif action == 'swap_main_and_subordinate':
         if args.dangerous:
-            swap_master_and_slave(instance, args.dry_run)
+            swap_main_and_subordinate(instance, args.dry_run)
         else:
-            raise Exception('To swap_master_and_slave in zk outside of the '
+            raise Exception('To swap_main_and_subordinate in zk outside of the '
                             'failover script is very dangerous and the '
                             '--dangerous flag was not supplied.')
-    elif action == 'swap_slave_and_dr_slave':
-        swap_slave_and_dr_slave(instance, args.dry_run)
+    elif action == 'swap_subordinate_and_dr_subordinate':
+        swap_subordinate_and_dr_subordinate(instance, args.dry_run)
     else:
         raise Exception('Invalid action: {action}'.format(action=action))
 
@@ -94,7 +94,7 @@ def determine_replacement_role(conn, instance_id):
     instance - The replacement instance
 
     Returns:
-    The replication role which should be either 'slave' or 'dr_slave'
+    The replication role which should be either 'subordinate' or 'dr_subordinate'
     """
     zk = host_utils.MysqlZookeeper()
     cursor = conn.cursor()
@@ -115,7 +115,7 @@ def determine_replacement_role(conn, instance_id):
     repl_type = zk.get_replica_type_from_instance(old_host)
 
     if repl_type == host_utils.REPLICA_ROLE_MASTER:
-        raise Exception('Corwardly refusing to replace a master!')
+        raise Exception('Corwardly refusing to replace a main!')
     elif repl_type is None:
         raise Exception('Could not determine replacement role')
     else:
@@ -167,7 +167,7 @@ def add_replica_to_zk(instance, replica_type, dry_run):
 
     Args:
     instance - A hostaddr object of the replica to add to zk
-    replica_type - Either 'slave' or 'dr_slave'.
+    replica_type - Either 'subordinate' or 'dr_subordinate'.
     dry_run - If set, do not modify zk
     """
     try:
@@ -181,23 +181,23 @@ def add_replica_to_zk(instance, replica_type, dry_run):
         mysql_lib.assert_replication_unlagged(
             instance,
             mysql_lib.REPLICATION_TOLERANCE_NORMAL)
-        master = mysql_lib.get_master_from_instance(instance)
+        main = mysql_lib.get_main_from_instance(instance)
 
         zk_local = host_utils.MysqlZookeeper()
         kazoo_client = environment_specific.get_kazoo_client()
         if not kazoo_client:
             raise Exception('Could not get a zk connection')
 
-        if master not in zk_local.get_all_mysql_instances_by_type(
+        if main not in zk_local.get_all_mysql_instances_by_type(
                     host_utils.REPLICA_ROLE_MASTER):
-            raise Exception('Instance {} is not a master in zk'
-                            ''.format(master))
+            raise Exception('Instance {} is not a main in zk'
+                            ''.format(main))
 
-        log.info('Detected master of {instance} '
-                 'as {master}'.format(instance=instance,
-                                      master=master))
+        log.info('Detected main of {instance} '
+                 'as {main}'.format(instance=instance,
+                                      main=main))
 
-        replica_set = zk_local.get_replica_set_from_instance(master)
+        replica_set = zk_local.get_replica_set_from_instance(main)
         log.info('Detected replica_set as {}'.format(replica_set))
         old_instance = zk_local.get_mysql_instance_from_replica_set(
                            replica_set,
@@ -237,7 +237,7 @@ def add_replica_to_zk(instance, replica_type, dry_run):
                 log.info('Existing dr config:')
                 log.info(pprint.pformat(remove_auth(parsed_data[replica_set])))
             else:
-                log.info('Replica set did not previously have a dr slave')
+                log.info('Replica set did not previously have a dr subordinate')
 
             new_data[replica_set] = \
                 {host_utils.REPLICA_ROLE_DR_SLAVE: {'host': instance.hostname,
@@ -273,8 +273,8 @@ def add_replica_to_zk(instance, replica_type, dry_run):
         raise
 
 
-def swap_master_and_slave(instance, dry_run):
-    """ Swap a master and slave in zk. Warning: this does not sanity checks
+def swap_main_and_subordinate(instance, dry_run):
+    """ Swap a main and subordinate in zk. Warning: this does not sanity checks
         and does nothing more than update zk. YOU HAVE BEEN WARNED!
 
     Args:
@@ -321,11 +321,11 @@ def swap_master_and_slave(instance, dry_run):
         kazoo_client.set(zk_node, simplejson.dumps(new_data), version)
 
 
-def swap_slave_and_dr_slave(instance, dry_run):
-    """ Swap a slave and a dr_slave in zk
+def swap_subordinate_and_dr_subordinate(instance, dry_run):
+    """ Swap a subordinate and a dr_subordinate in zk
 
     Args:
-    instance - An instance that is either a slave or dr_slave
+    instance - An instance that is either a subordinate or dr_subordinate
     """
     zk_local = host_utils.MysqlZookeeper()
     kazoo_client = environment_specific.get_kazoo_client()

@@ -79,33 +79,33 @@ def start_shard_migration(source_replica_set, destination_replica_set,
                        db=', '.join(mig_dbs)))
 
     zk = host_utils.MysqlZookeeper()
-    source_master = zk.get_mysql_instance_from_replica_set(source_replica_set)
-    source_slave = zk.get_mysql_instance_from_replica_set(
+    source_main = zk.get_mysql_instance_from_replica_set(source_replica_set)
+    source_subordinate = zk.get_mysql_instance_from_replica_set(
         source_replica_set, host_utils.REPLICA_ROLE_DR_SLAVE)
 
-    if not source_slave:
-        source_slave = zk.get_mysql_instance_from_replica_set(
+    if not source_subordinate:
+        source_subordinate = zk.get_mysql_instance_from_replica_set(
             source_replica_set, host_utils.REPLICA_ROLE_SLAVE)
-    log.info('Source host for dumping data {}'.format(source_slave))
-    destination_master = zk.get_mysql_instance_from_replica_set(
+    log.info('Source host for dumping data {}'.format(source_subordinate))
+    destination_main = zk.get_mysql_instance_from_replica_set(
             destination_replica_set)
     log.info('Destination host for restoring data {}'
-             ''.format(destination_master))
+             ''.format(destination_main))
 
     expected_dbs_on_source = zk.get_sharded_dbs_by_replica_set()[source_replica_set]
-    non_mig_dbs = mysql_lib.get_dbs(source_slave).difference(mig_dbs)
+    non_mig_dbs = mysql_lib.get_dbs(source_subordinate).difference(mig_dbs)
     unexpected_dbs = mig_dbs.difference(expected_dbs_on_source)
     if unexpected_dbs:
         raise Exception('Unexpected database supplied for migraton: {}'
                         ''.format(unexpected_dbs))
 
     # Make sure there are no missing or extra shards
-    precheck_schema(source_master)
-    precheck_schema(destination_master)
+    precheck_schema(source_main)
+    precheck_schema(destination_main)
 
     # Check disk space
-    required_disk_space = get_required_disk_space(mig_dbs, source_master)
-    available_disk_space = disk_space_available_for_migration(destination_master)
+    required_disk_space = get_required_disk_space(mig_dbs, source_main)
+    available_disk_space = disk_space_available_for_migration(destination_main)
     if available_disk_space < required_disk_space:
         raise Exception('Insufficent disk space to migrate, '
                         'available {a}MB, '
@@ -128,21 +128,21 @@ def start_shard_migration(source_replica_set, destination_replica_set,
             # First we will dump the schema for the shards that are not moving
             log.info('Backing up non-migrating schema: {}'.format(non_mig_dbs))
             no_mig_backup = backup.logical_backup_instance(
-                                            source_slave, time.localtime(),
+                                            source_subordinate, time.localtime(),
                                             blackhole=True, databases=non_mig_dbs)
 
         time.sleep(1)
         # And next the metadata db
         log.info('Backing up metadata db: {}'.format(mysql_lib.METADATA_DB))
         metadata_backup = backup.logical_backup_instance(
-                                        source_slave, time.localtime(),
+                                        source_subordinate, time.localtime(),
                                         databases=[mysql_lib.METADATA_DB])
 
         time.sleep(1)
         # Next we will backup the data for the shards that are moving
         log.info('Backing up migrating schema data: {}'.format(mig_dbs))
         mig_backup = backup.logical_backup_instance(
-                                       source_slave, time.localtime(),
+                                       source_subordinate, time.localtime(),
                                        databases=mig_dbs)
     except:
         finish_migration_log(lock_id, STATUS_EXPORT_FAILED)
@@ -151,20 +151,20 @@ def start_shard_migration(source_replica_set, destination_replica_set,
     if(non_mig_dbs):
         # Finally import the backups
         log.info('Importing all the blackhole tables')
-        mysql_restore.logical_restore(no_mig_backup, destination_master)
+        mysql_restore.logical_restore(no_mig_backup, destination_main)
 
     log.info('Import metadata')
-    mysql_restore.logical_restore(metadata_backup, destination_master)
+    mysql_restore.logical_restore(metadata_backup, destination_main)
 
     log.info('Setting up replication')
-    mysql_lib.change_master(destination_master, source_master,
+    mysql_lib.change_main(destination_main, source_main,
                             'BOGUS', 0, no_start=True, skip_set_readonly=True,
                             gtid_auto_pos=False)
-    mysql_restore.logical_restore(mig_backup, destination_master)
+    mysql_restore.logical_restore(mig_backup, destination_main)
 
-    # add start slave, catchup
-    mysql_lib.start_replication(destination_master)
-    mysql_lib.wait_for_catch_up(destination_master, migration=True)
+    # add start subordinate, catchup
+    mysql_lib.start_replication(destination_main)
+    mysql_lib.wait_for_catch_up(destination_main, migration=True)
 
     # And update the log/locks
     update_migration_status(lock_id, STATUS_FAILOVER_READY)

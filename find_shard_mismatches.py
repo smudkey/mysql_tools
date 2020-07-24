@@ -53,7 +53,7 @@ def find_shard_mismatches(instance=False):
 
     Returns:
         orphaned - A dict of unexpected and (according to table statistics)
-                   unused dbs. Key is master instance, value is a set.
+                   unused dbs. Key is main instance, value is a set.
         orphaned_but_used - A dict of unexpected and but used dbs.
                             Data structure is the same as orphaned.
         missing - A dict of expected but missing dbs.

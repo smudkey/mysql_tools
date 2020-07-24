@@ -141,7 +141,7 @@ def check_one_binlog(timestamp, binlog_file, instance, username, password):
     ts_plus_one = (timestamp + DELTA_ONE_SECOND).strftime(MYSQL_DT_FORMAT)
 
     binlog_cmd = ['/usr/bin/mysqlbinlog',
-        '--read-from-remote-master=BINLOG-DUMP-GTIDS',
+        '--read-from-remote-main=BINLOG-DUMP-GTIDS',
         '--host={}'.format(instance.hostname),
         '--user={}'.format(username),
         '--password={}'.format(password),
@@ -185,10 +185,10 @@ def find_gtid_for_timestamp(instance, timestamp):
 
     # go in reverse order, because odds are that the log we want
     # is closer to the end than the beginning.
-    master_logs = list(reversed(mysql_lib.get_master_logs(instance)))
+    main_logs = list(reversed(mysql_lib.get_main_logs(instance)))
 
     (username, password) = mysql_lib.get_mysql_user_for_role('replication')
-    for binlog in master_logs:
+    for binlog in main_logs:
         # if the timestamp we want is prior to the first entry in the
         # binlog, it can't possibly be in there.
         log_start = get_binlog_start(binlog['Log_name'], instance, username,
@@ -219,9 +219,9 @@ def main():
     parser.add_argument('-i',
                         '--instance',
                         help='The instance to query.  This should '
-                             'be the master of a replica set, but '
-                             'if you supply a non-master, the script '
-                             'will query the master anyway.')
+                             'be the main of a replica set, but '
+                             'if you supply a non-main, the script '
+                             'will query the main anyway.')
     parser.add_argument('timestamp',
                         help='The timestamp to rewind to.  This must '
                              'be in MySQL format: YYYY-MM-DD HH:MM:SS')
@@ -234,7 +234,7 @@ def main():
             instance = zk.get_mysql_instance_from_replica_set(
                 zk.get_replica_set_from_instance(instance),
                 host_utils.REPLICA_ROLE_MASTER)
-            log.info('Detected master of {i} as {m}'.format(i=args.instance,
+            log.info('Detected main of {i} as {m}'.format(i=args.instance,
                                                             m=instance))
         timestamp = dt.datetime.strptime(args.timestamp, MYSQL_DT_FORMAT)
     except Exception as e:

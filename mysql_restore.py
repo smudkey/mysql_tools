@@ -114,18 +114,18 @@ def restore_instance(backup_type, restore_source, destination,
     backup_key = find_a_backup_to_restore(possible_sources, destination,
                                           backup_type, date)
 
-    # Figure out what what we use to as the master when we setup replication
+    # Figure out what what we use to as the main when we setup replication
     (restore_source, _) = backup.get_metadata_from_backup_file(backup_key.name)
     try:
         replica_set = restore_source.get_zk_replica_set()
-        master = zk.get_mysql_instance_from_replica_set(replica_set,
+        main = zk.get_mysql_instance_from_replica_set(replica_set,
                                                         host_utils.REPLICA_ROLE_MASTER)
     except:
         # ZK has no idea what this replica set is, probably a new replica set.
-        master = restore_source
+        main = restore_source
 
     # Start logging
-    row_id = backup.start_restore_log(master, {
+    row_id = backup.start_restore_log(main, {
                 'restore_source': restore_source,
                 'restore_port': destination.port,
                 'restore_file': backup_key.name,
@@ -150,7 +150,7 @@ def restore_instance(backup_type, restore_source, destination,
 
         if backup_type == backup.BACKUP_TYPE_XBSTREAM:
             xbstream_restore(backup_key, destination.port)
-            if master == restore_source:
+            if main == restore_source:
                 log.info('Pulling replication info for restore from '
                          'backup source')
                 (binlog_file,
@@ -159,31 +159,31 @@ def restore_instance(backup_type, restore_source, destination,
                                 destination.port)
             else:
                 log.info('Pulling replication info for restore from '
-                         'master of backup source')
+                         'main of backup source')
                 # if our backup came from a GTID server, we won't have
                 # a binlog_file and a binlog_pos, so we need to see if
                 # we can get a set of purged GTIDs
                 (binlog_file,
                  binlog_pos,
-                 gtid_purged) = backup.parse_xtrabackup_slave_info(
+                 gtid_purged) = backup.parse_xtrabackup_subordinate_info(
                                 destination.port)
 
         elif backup_type == backup.BACKUP_TYPE_LOGICAL:
             log.info('Preparing replication')
             # We are importing a mysqldump which was created with
-            # --master-data or --dump-slave so there will be a CHANGE MASTER
+            # --main-data or --dump-subordinate so there will be a CHANGE MASTER
             # statement at the start of the dump. MySQL will basically just
-            # ignore a CHANGE MASTER command if master_host is not already
-            # setup. So we are setting master_host, username and password
-            # here. We use BOGUS for master_log_file so that the IO thread is
-            # intentionally broken.  With no argument for master_log_file,
+            # ignore a CHANGE MASTER command if main_host is not already
+            # setup. So we are setting main_host, username and password
+            # here. We use BOGUS for main_log_file so that the IO thread is
+            # intentionally broken.  With no argument for main_log_file,
             # the IO thread would start downloading the first bin log and
             # the SQL thread would start executing...
-            mysql_lib.change_master(destination, master, 'BOGUS', 0,
+            mysql_lib.change_main(destination, main, 'BOGUS', 0,
                                     no_start=True)
-            # reset master on slave before we load anything to ensure that
+            # reset main on subordinate before we load anything to ensure that
             # we can set GTID info from the backup, if it exists.
-            mysql_lib.reset_master(destination)
+            mysql_lib.reset_main(destination)
             logical_restore(backup_key, destination)
             host_utils.stop_mysql(destination.port)
 
@@ -196,7 +196,7 @@ def restore_instance(backup_type, restore_source, destination,
             options=host_utils.DEFAULTS_FILE_EXTRA_ARG.format(
                 defaults_file=host_utils.MYSQL_NOREPL_CNF_FILE))
 
-        # Since we haven't started the slave yet, make sure we've got these
+        # Since we haven't started the subordinate yet, make sure we've got these
         # plugins installed, whether we use them or not.
         mysql_lib.setup_semisync_plugins(destination)
         mysql_lib.setup_audit_plugin(destination)
@@ -208,11 +208,11 @@ def restore_instance(backup_type, restore_source, destination,
         log.info('Setting up MySQL replication')
         restore_log_update['replication'] = 'FAIL'
         if backup_type == backup.BACKUP_TYPE_XBSTREAM:
-            # before we change master, reset master on the
-            # slave to clear out any GTID errant transactions.
-            mysql_lib.reset_master(destination)
-            mysql_lib.change_master(destination,
-                                    master,
+            # before we change main, reset main on the
+            # subordinate to clear out any GTID errant transactions.
+            mysql_lib.reset_main(destination)
+            mysql_lib.change_main(destination,
+                                    main,
                                     binlog_file,
                                     binlog_pos,
                                     gtid_purged=gtid_purged,
@@ -251,7 +251,7 @@ def restore_instance(backup_type, restore_source, destination,
             else:
                 host_utils.start_mysql(destination.port)
 
-        backup.update_restore_log(master, row_id, restore_log_update)
+        backup.update_restore_log(main, row_id, restore_log_update)
 
     try:
         if add_to_zk == 'REQ':
@@ -265,14 +265,14 @@ def restore_instance(backup_type, restore_source, destination,
             log.info('Adding instance to zk.')
             modify_mysql_zk.auto_add_instance_to_zk(destination.port,
                                                     dry_run=False)
-            backup.update_restore_log(master, row_id, {'zookeeper': 'OK'})
+            backup.update_restore_log(main, row_id, {'zookeeper': 'OK'})
         else:
             log.info('add_to_zk is not set, therefore not adding to zk')
     except Exception as e:
         log.warning("An exception occurred: {}".format(e))
         log.warning("If this is a DB issue, that's fine. "
                     "Otherwise, you should check ZK.")
-    backup.update_restore_log(master, row_id, {'finished_at': True})
+    backup.update_restore_log(main, row_id, {'finished_at': True})
 
     if no_repl == 'REQ':
         log.info('Starting a new backup')
@@ -294,7 +294,7 @@ def prod_check(destination, skip_production_check):
         replica_type = None
     if replica_type == host_utils.REPLICA_ROLE_MASTER:
         # If the instance, we will refuse to run. No ifs, ands, or buts/
-        raise Exception('Restore script must never run on a master')
+        raise Exception('Restore script must never run on a main')
     if replica_type:
         if skip_production_check:
             log.info('Ignoring production check. We hope you know what you '
@@ -315,8 +315,8 @@ def prod_check(destination, skip_production_check):
 
 def get_possible_sources(destination, backup_type):
     """ Get a possible sources to restore a backup from. This is required due
-        to mysqldump 5.5 not being able to use both --master_data and
-        --slave_data
+        to mysqldump 5.5 not being able to use both --main_data and
+        --subordinate_data
 
     Args:
     destination - A hostAddr object

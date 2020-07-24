@@ -73,7 +73,7 @@ def main():
                         default=None)
     parser.add_argument('--override_mysql_major_version',
                         help=('Do not replace with an instance of the same '
-                              'version as the master db, instead use the '
+                              'version as the main db, instead use the '
                               'supplied version.'),
                         choices=environment_specific.SUPPORTED_MYSQL_MAJOR_VERSIONS,
                         default=None)
@@ -149,7 +149,7 @@ def launch_replacement_db_host(original_server,
         raise Exception('Can not replace an instance which is not in zk')
 
     if replica_type == host_utils.REPLICA_ROLE_MASTER:
-        raise Exception('Can not replace an instance which is a master in zk')
+        raise Exception('Can not replace an instance which is a main in zk')
 
     log.info('Trying to launch a replacement for host {host} which is part '
              'of replica set {rs}'.format(host=original_server.hostname,

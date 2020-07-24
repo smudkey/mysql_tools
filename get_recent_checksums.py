@@ -5,7 +5,7 @@ import sys
 from lib import host_utils
 from lib import mysql_lib
 
-LINE_TEMPLATE = ('{master_instance:<MSPC}'
+LINE_TEMPLATE = ('{main_instance:<MSPC}'
                  '{instance:<RSPC}'
                  '{reported_at:<22}'
                  '{db:<DBSPC}'
@@ -39,7 +39,7 @@ def main():
         sys.exit(1)
 
     format_str, line_length = generate_format_string(checksums)
-    header = format_str.format(master_instance='Master',
+    header = format_str.format(main_instance='Main',
                                instance='Replica',
                                reported_at='Date',
                                db='Database',
@@ -69,7 +69,7 @@ def generate_format_string(checksums):
         line_length - the maximum length of the line + some extra space
     """
     # initial padding values
-    padding = {'master_instance': len('Master'),
+    padding = {'main_instance': len('Main'),
                'instance': len('Replica'),
                'db': len('Database'),
                'tbl': len('Table'),
@@ -94,7 +94,7 @@ def generate_format_string(checksums):
 
     # regenerate the output template based on padding.
     format_str = LINE_TEMPLATE.replace(
-        'MSPC', str(padding['master_instance'] + 3)).replace(
+        'MSPC', str(padding['main_instance'] + 3)).replace(
         'RSPC', str(padding['instance'] + 3)).replace(
         'DBSPC', str(padding['db'] + 3)).replace(
         'TSPC', str(padding['tbl'] + 3)).replace(
@@ -150,7 +150,7 @@ def get_checksums(instance, db=False):
     # We only care about the most recent checksum
     cursor = conn.cursor()
 
-    sql_base = ("SELECT detail.master_instance, "
+    sql_base = ("SELECT detail.main_instance, "
                 "       detail.instance, "
                 "       detail.db, "
                 "       detail.tbl, "
@@ -160,18 +160,18 @@ def get_checksums(instance, db=False):
                 "       detail.row_count, "
                 "       detail.row_diffs "
                 "FROM "
-                "  (SELECT master_instance,"
+                "  (SELECT main_instance,"
                 "          instance, "
                 "          db, "
                 "          tbl, "
                 "          MAX(reported_at) AS reported_at "
                 "   FROM test.checksum_detail "
-                "   WHERE master_instance=%(instance)s "
+                "   WHERE main_instance=%(instance)s "
                 "   {in_db}"
                 "   GROUP BY 1,2,3,4 "
                 "  ) AS most_recent "
                 "JOIN test.checksum_detail AS detail "
-                "USING(master_instance, instance, db, "
+                "USING(main_instance, instance, db, "
                 "tbl, reported_at) ")
 
     # and then fill in the variables.

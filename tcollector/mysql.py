@@ -59,7 +59,7 @@ class DB(object):
             cursor: A cursor acquired from that connection.
             version: What version is this MySQL running (from `SELECT VERSION()').
             port: What port the instance is running on.
-            db_type: Is the db a master, a slave or undefined? This is based
+            db_type: Is the db a main, a subordinate or undefined? This is based
                      on service discovery
         """
         host = socket.gethostname()
@@ -187,7 +187,7 @@ def get_db_type(port):
     Args:
         port: the port on localhost
 
-    Returns: 'master', 'slave', 'dr_slave' or 'undef'
+    Returns: 'main', 'subordinate', 'dr_subordinate' or 'undef'
     """
     try:
         instance = host_utils.HostAddr(':'.join((socket.gethostname(),
@@ -208,7 +208,7 @@ def main(args):
     first_run = True
     while True:
         sleep_time = SLAVE_COLLECTION_INTERVAL
-        # if we have a master, we use a short interval, default to slave and
+        # if we have a main, we use a short interval, default to subordinate and
         # longer
         # capture last collection time
         if first_run:
@@ -236,7 +236,7 @@ def main(args):
                         err(traceback.format_exc())
                 except:
                     err(traceback.format_exc())
-            if db.db_type == 'master':
+            if db.db_type == 'main':
                 sleep_time = MASTER_COLLECTION_INTERVAL
         sys.stdout.flush()
         time.sleep(sleep_time)
@@ -429,17 +429,17 @@ def flushResponseTime(db):
 
 
 def collectReplicationStatus(db):
-    """ Collect replication stats using mysql_lib.calc_slave_lag """
+    """ Collect replication stats using mysql_lib.calc_subordinate_lag """
     instance = host_utils.HostAddr(':'.join((socket.gethostname(),
                                              db.port)))
-    ret = mysql_lib.calc_slave_lag(instance)
-    printmetric(db, "slave.seconds_behind_master", ret['sbm'])
-    printmetric(db, "slave.io_bytes_behind", ret["io_bytes"])
-    printmetric(db, "slave.sql_bytes_behind", ret["sql_bytes"])
-    printmetric(db, "slave.thread_io_running",
-                int('yes' == ret['ss']['Slave_IO_Running'].lower()))
-    printmetric(db, "slave.thread_sql_running",
-                int('yes' == ret['ss']['Slave_SQL_Running'].lower()))
+    ret = mysql_lib.calc_subordinate_lag(instance)
+    printmetric(db, "subordinate.seconds_behind_main", ret['sbm'])
+    printmetric(db, "subordinate.io_bytes_behind", ret["io_bytes"])
+    printmetric(db, "subordinate.sql_bytes_behind", ret["sql_bytes"])
+    printmetric(db, "subordinate.thread_io_running",
+                int('yes' == ret['ss']['Subordinate_IO_Running'].lower()))
+    printmetric(db, "subordinate.thread_sql_running",
+                int('yes' == ret['ss']['Subordinate_SQL_Running'].lower()))
 
 
 def collectProcessList(db):

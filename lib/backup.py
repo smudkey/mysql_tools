@@ -62,8 +62,8 @@ REMOVE_AUTO_INC_COL_ARG = "sed -e 's/ AUTO_INCREMENT,/ DEFAULT 0,/g'"
 REMOVE_AUTO_INC_START_VALUE = "sed -e 's/ AUTO_INCREMENT\(=[0-9]\+\)\?//g'"
 REMOVE_INDEXES = "perl -0pe 's/,(\n +(PRIMARY|UNIQUE)? KEY[^\n]+)+//gs'"
 CREATE_IF_NOT_EXISTS_SED = "sed -e 's/CREATE TABLE/CREATE TABLE IF NOT EXISTS/g'"
-ARG_MASTER_DATA = '--master-data'
-ARG_SLAVE_DATA = '--dump-slave'
+ARG_MASTER_DATA = '--main-data'
+ARG_SLAVE_DATA = '--dump-subordinate'
 ARG_ALL_DATABASES = ' '.join(('--all-databases',
                               '--events',
                               '--routines'))
@@ -102,8 +102,8 @@ XBSTREAM = ['/usr/bin/xbstream', '--extract']
 XTRABACKUP_CMD = ' '.join((INNOBACKUPEX,
                            '--defaults-file={cnf}',
                            '--defaults-group={cnf_group}',
-                           '--slave-info',
-                           '--safe-slave-backup',
+                           '--subordinate-info',
+                           '--safe-subordinate-backup',
                            '--parallel=8',
                            '--stream=xbstream',
                            '--no-timestamp',
@@ -451,7 +451,7 @@ def start_restore_log(instance, params):
     try:
         conn = mysql_lib.connect_mysql(instance)
     except Exception as e:
-        log.warning("Unable to connect to master to log "
+        log.warning("Unable to connect to main to log "
                     "our progress: {e}.  Attempting to "
                     "continue with restore anyway.".format(e=e))
         return None
@@ -495,7 +495,7 @@ def update_restore_log(instance, row_id, params):
     try:
         conn = mysql_lib.connect_mysql(instance)
     except Exception as e:
-        log.warning("Unable to connect to master to log "
+        log.warning("Unable to connect to main to log "
                     "our progress: {e}.  Attempting to "
                     "continue with restore anyway.".format(e=e))
         return
@@ -538,9 +538,9 @@ def get_age_last_restore(replica_set):
     zk = host_utils.MysqlZookeeper()
     today = datetime.date.today()
     age = None
-    master = zk.get_mysql_instance_from_replica_set(replica_set)
+    main = zk.get_mysql_instance_from_replica_set(replica_set)
     try:
-        conn = mysql_lib.connect_mysql(master)
+        conn = mysql_lib.connect_mysql(main)
         cursor = conn.cursor()
         sql = ("SELECT restore_file "
                "FROM test.xb_restore_status "
@@ -587,7 +587,7 @@ def create_status_table(conn):
     """ Create the restoration status table if it isn't already there.
 
     Args:
-    conn - A connection to the master server for this replica set.
+    conn - A connection to the main server for this replica set.
     """
     try:
         cursor = conn.cursor()
@@ -595,7 +595,7 @@ def create_status_table(conn):
         cursor.close()
     except Exception as e:
         log.error("Unable to create replication status table "
-                  "on master: {e}".format(e=e))
+                  "on main: {e}".format(e=e))
         log.error("We will attempt to continue anyway.")
 
 
@@ -684,9 +684,9 @@ def apply_log(datadir, memory=None):
             raise Exception(msg)
 
 
-def parse_xtrabackup_slave_info(port):
-    """ Pull master_log, master_log_pos, or gtid_purged from the
-    xtrabackup_slave_info file
+def parse_xtrabackup_subordinate_info(port):
+    """ Pull main_log, main_log_pos, or gtid_purged from the
+    xtrabackup_subordinate_info file
 
     NOTE: This file has its data as a CHANGE MASTER command and may also have
     a list of GTID sets that have been seen.  With no GTID, we have this:
@@ -709,7 +709,7 @@ def parse_xtrabackup_slave_info(port):
           list will be populated.
     """
     datadir = host_utils.get_cnf_setting('datadir', port)
-    file_path = os.path.join(datadir, 'xtrabackup_slave_info')
+    file_path = os.path.join(datadir, 'xtrabackup_subordinate_info')
     with open(file_path) as f:
         data = f.read()
 
@@ -721,7 +721,7 @@ def parse_xtrabackup_slave_info(port):
     if res:
         # this is GTID-style replication.  we check for this first.
         gtid_purged = res.group(1)
-        log.info('Master info: GTID purged: {}'.format(gtid_purged))
+        log.info('Main info: GTID purged: {}'.format(gtid_purged))
         return(None, None, gtid_purged)
     else:
         # and this is coordinate-style replication
@@ -730,14 +730,14 @@ def parse_xtrabackup_slave_info(port):
         res = re.match(pos_pattern, data)
         binlog_pos = int(res.group(1))
 
-        log.info('Master info: binlog_file: {binlog_file},'
+        log.info('Main info: binlog_file: {binlog_file},'
                  ' binlog_pos: {binlog_pos}'.format(binlog_file=binlog_file,
                                                     binlog_pos=binlog_pos))
         return (binlog_file, binlog_pos, None)
 
 
 def parse_xtrabackup_binlog_info(port):
-    """ Pull master_log, master_log_pos, and, optionally, GTID purged
+    """ Pull main_log, main_log_pos, and, optionally, GTID purged
         from an xtrabackup_binlog_info file
 
     Note: This file stores its data as two strings in a file delimited
@@ -768,7 +768,7 @@ def parse_xtrabackup_binlog_info(port):
     gtid_purged = fields[3].replace('\n', ' ').strip() \
                     if len(fields) > 2 else None
 
-    log.info('Master info: binlog_file: {binlog_file},'
+    log.info('Main info: binlog_file: {binlog_file},'
              ' binlog_pos: {binlog_pos},'
              ' gtid_purged_set: {g}'.format(binlog_file=binlog_file,
                                             binlog_pos=binlog_pos,

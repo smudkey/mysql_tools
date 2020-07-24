@@ -47,9 +47,9 @@ def get_problem_replicasets(localpath, raw_mapping):
     zk = host_utils.MysqlZookeeper()
     replica_set_dbs = get_db_on_replica_set(localpath, raw_mapping)
     for replica_set in replica_set_dbs:
-        master = zk.get_mysql_instance_from_replica_set(replica_set=replica_set,
+        main = zk.get_mysql_instance_from_replica_set(replica_set=replica_set,
                                                         repl_type=host_utils.REPLICA_ROLE_MASTER)
-        dbs = mysql_lib.get_dbs(master)
+        dbs = mysql_lib.get_dbs(main)
         missing = replica_set_dbs[replica_set].difference(dbs)
         if missing:
             problem_replica_sets[replica_set] = missing

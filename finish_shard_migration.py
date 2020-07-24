@@ -47,7 +47,7 @@ def finish_shard_migration(source_replica_set,
     Args:
     source_replica_set -  The source replica set for the migration
     dry_run - Just run verifications, do not failover shards
-    confirm_row_counts - If true, confirm row counts of slaves, otherwise
+    confirm_row_counts - If true, confirm row counts of subordinates, otherwise
                          check estimated row counts
     """
     if host_utils.get_security_role() not in environment_specific.ROLE_TO_MIGRATE:
@@ -66,8 +66,8 @@ def finish_shard_migration(source_replica_set,
 
     # Figure out some more data based on the lock
     zk = host_utils.MysqlZookeeper()
-    source_master = zk.get_mysql_instance_from_replica_set(source_replica_set)
-    destination_master = zk.get_mysql_instance_from_replica_set(destination_replica_set)
+    source_main = zk.get_mysql_instance_from_replica_set(source_replica_set)
+    destination_main = zk.get_mysql_instance_from_replica_set(destination_replica_set)
     log.info('Will migrate {dbs} from {s} to {d}'
              ''.format(dbs=mig_databases,
                        s=source_replica_set,
@@ -92,7 +92,7 @@ def finish_shard_migration(source_replica_set,
                                     mig_databases, confirm_row_counts)
 
         log.info('Confirming that no real tables exists on blackhole dbs')
-        verify_blackhole_dbs(destination_master, non_mig_databases)
+        verify_blackhole_dbs(destination_main, non_mig_databases)
 
         if dry_run:
             log.info('In dry_run mode, existing now')
@@ -100,25 +100,25 @@ def finish_shard_migration(source_replica_set,
 
         log.info('Preliminary sanity checks complete, starting migration')
 
-        log.info('Setting read_only on master servers')
+        log.info('Setting read_only on main servers')
         read_only_set = True
-        mysql_lib.set_global_variable(source_master, 'read_only', True)
+        mysql_lib.set_global_variable(source_main, 'read_only', True)
 
-        # We don't strictly need to set read_only on the destination_master
+        # We don't strictly need to set read_only on the destination_main
         # but it seems sane out of paranoia
-        mysql_lib.set_global_variable(destination_master, 'read_only', True)
+        mysql_lib.set_global_variable(destination_main, 'read_only', True)
 
-        log.info('Confirming no writes to old master')
-        mysql_failover.confirm_no_writes(source_master)
+        log.info('Confirming no writes to old main')
+        mysql_failover.confirm_no_writes(source_main)
 
         log.info('Waiting for replicas to be caught up')
-        wait_for_repl_sync(destination_master)
+        wait_for_repl_sync(destination_main)
 
         log.info('Breaking replication from source to destination')
-        mysql_lib.reset_slave(destination_master)
+        mysql_lib.reset_subordinate(destination_main)
 
-        log.info('Renaming migrated dbs on source master')
-        fix_orphaned_shards.rename_db_to_drop(source_master, mig_databases,
+        log.info('Renaming migrated dbs on source main')
+        fix_orphaned_shards.rename_db_to_drop(source_main, mig_databases,
                                               skip_check=True)
 
         log.info('Modifying shard mapping')
@@ -128,7 +128,7 @@ def finish_shard_migration(source_replica_set,
 
         log.info('Dropping blackhole dbs on destination')
         for db in non_mig_databases:
-            mysql_lib.drop_db(destination_master, db)
+            mysql_lib.drop_db(destination_main, db)
 
         start_shard_migration.finish_migration_log(mig_lock_identifier,
                                                    start_shard_migration.STATUS_FINISHED)
@@ -138,8 +138,8 @@ def finish_shard_migration(source_replica_set,
     finally:
         if read_only_set:
             log.info('Remove read_only settings')
-            mysql_lib.set_global_variable(source_master, 'read_only', False)
-            mysql_lib.set_global_variable(destination_master, 'read_only', False)
+            mysql_lib.set_global_variable(source_main, 'read_only', False)
+            mysql_lib.set_global_variable(destination_main, 'read_only', False)
 
         if dest_lock_identifier:
             log.info('Releasing destination promotion lock')
@@ -152,7 +152,7 @@ def finish_shard_migration(source_replica_set,
     # No exception got reraised in the the except, things must have worked
     log.info('To drop migrated dbs on source, wait a bit and then run:')
     log.info('/usr/local/bin/mysql_utils/fix_orphaned_shards.py -a '
-             'drop -i {}'.format(source_master))
+             'drop -i {}'.format(source_main))
 
 
 def verify_schema_for_migration(source_replica_set,
@@ -169,16 +169,16 @@ def verify_schema_for_migration(source_replica_set,
                          synchronized, otherwise do a very cursory check
     """
     zk = host_utils.MysqlZookeeper()
-    source_master = zk.get_mysql_instance_from_replica_set(source_replica_set)
-    destination_master = zk.get_mysql_instance_from_replica_set(destination_replica_set)
-    source_slave = zk.get_mysql_instance_from_replica_set(source_replica_set,
+    source_main = zk.get_mysql_instance_from_replica_set(source_replica_set)
+    destination_main = zk.get_mysql_instance_from_replica_set(destination_replica_set)
+    source_subordinate = zk.get_mysql_instance_from_replica_set(source_replica_set,
                                                           host_utils.REPLICA_ROLE_SLAVE)
-    destination_slave = zk.get_mysql_instance_from_replica_set(destination_replica_set,
+    destination_subordinate = zk.get_mysql_instance_from_replica_set(destination_replica_set,
                                                           host_utils.REPLICA_ROLE_SLAVE)
     problems = list()
     for db in databases:
-        source_tables = mysql_lib.get_tables(source_master, db)
-        destination_tables = mysql_lib.get_tables(destination_master, db)
+        source_tables = mysql_lib.get_tables(source_main, db)
+        destination_tables = mysql_lib.get_tables(destination_main, db)
 
         differences = source_tables.symmetric_difference(destination_tables)
         if differences:
@@ -188,10 +188,10 @@ def verify_schema_for_migration(source_replica_set,
         for table in source_tables:
             if table not in destination_tables:
                 pass
-            source_def = mysql_lib.show_create_table(source_master, db, table,
+            source_def = mysql_lib.show_create_table(source_main, db, table,
                                                      standardize=True)
             
-            destination_def = mysql_lib.show_create_table(destination_master,
+            destination_def = mysql_lib.show_create_table(destination_main,
                                                           db,
                                                           table,
                                                           standardize=True)
@@ -202,7 +202,7 @@ def verify_schema_for_migration(source_replica_set,
                                 ''.format(db=db,
                                           table=table))
 
-            cnt_problem = check_row_counts(source_slave, destination_slave,
+            cnt_problem = check_row_counts(source_subordinate, destination_subordinate,
                                            db, table, exact=confirm_row_counts)
             if cnt_problem:
                 problems.append(cnt_problem)
@@ -289,50 +289,50 @@ def check_replication_for_migration(source_replica_set,
     destination_replica_set - Where shards are being sent
     """
     zk = host_utils.MysqlZookeeper()
-    source_master = zk.get_mysql_instance_from_replica_set(source_replica_set)
-    destination_master = zk.get_mysql_instance_from_replica_set(destination_replica_set)
-    source_slave = zk.get_mysql_instance_from_replica_set(source_replica_set,
+    source_main = zk.get_mysql_instance_from_replica_set(source_replica_set)
+    destination_main = zk.get_mysql_instance_from_replica_set(destination_replica_set)
+    source_subordinate = zk.get_mysql_instance_from_replica_set(source_replica_set,
                                                           host_utils.REPLICA_ROLE_SLAVE)
-    destination_slave = zk.get_mysql_instance_from_replica_set(destination_replica_set,
+    destination_subordinate = zk.get_mysql_instance_from_replica_set(destination_replica_set,
                                                           host_utils.REPLICA_ROLE_SLAVE)
 
-    # First we will confirm that the slave of the source is caught up
+    # First we will confirm that the subordinate of the source is caught up
     # this is important for row count comparisons
-    mysql_lib.assert_replication_unlagged(source_slave,
+    mysql_lib.assert_replication_unlagged(source_subordinate,
                                           mysql_lib.REPLICATION_TOLERANCE_NORMAL)
 
-    # Next, the slave of the destination replica set for the same reason
-    mysql_lib.assert_replication_unlagged(destination_slave,
+    # Next, the subordinate of the destination replica set for the same reason
+    mysql_lib.assert_replication_unlagged(destination_subordinate,
                                           mysql_lib.REPLICATION_TOLERANCE_NORMAL)
 
-    # Next, the destination master is relatively caught up to the source master
-    mysql_lib.assert_replication_unlagged(destination_master,
+    # Next, the destination main is relatively caught up to the source main
+    mysql_lib.assert_replication_unlagged(destination_main,
                                           mysql_lib.REPLICATION_TOLERANCE_NORMAL)
 
-    # We will also verify that the source master is not replicating. A scary
+    # We will also verify that the source main is not replicating. A scary
     # scenario is if the there is some sort of ring replication going and db
     # drops of blackhole db's would propegate to the source db.
     try:
-        source_slave_status = mysql_lib.get_slave_status(source_master)
+        source_subordinate_status = mysql_lib.get_subordinate_status(source_main)
     except mysql_lib.ReplicationError:
-        source_slave_status = None
+        source_subordinate_status = None
 
-    if source_slave_status:
-        raise Exception('Source master is setup for replication '
+    if source_subordinate_status:
+        raise Exception('Source main is setup for replication '
                         'this is super dangerous!')
 
-    # We will also verify that the destination master is replicating from the
-    # source master
-    slave_status = mysql_lib.get_slave_status(destination_master)
-    master_of_destination_master = host_utils.HostAddr(
-            ':'.join((slave_status['Master_Host'],
-                      str(slave_status['Master_Port']))))
-    if source_master != master_of_destination_master:
-            raise Exception('Master of destination {d} is {actual} rather than '
+    # We will also verify that the destination main is replicating from the
+    # source main
+    subordinate_status = mysql_lib.get_subordinate_status(destination_main)
+    main_of_destination_main = host_utils.HostAddr(
+            ':'.join((subordinate_status['Main_Host'],
+                      str(subordinate_status['Main_Port']))))
+    if source_main != main_of_destination_main:
+            raise Exception('Main of destination {d} is {actual} rather than '
                             'expected {expected} '
-                            ''.format(d=destination_master,
-                                      actual=master_of_destination_master,
-                                      expected=destination_master))
+                            ''.format(d=destination_main,
+                                      actual=main_of_destination_main,
+                                      expected=destination_main))
     log.info('Replication looks ok for migration')
 
 
